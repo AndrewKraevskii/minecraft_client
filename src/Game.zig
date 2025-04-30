@@ -36,55 +36,84 @@ players: std.AutoArrayHashMapUnmanaged(i32, struct {
     pos: rl.Vector3,
 }) = .empty,
 
+write_message: ?[]const u8 = null,
+
 pub fn gameLoop(game: *Game) void {
     rl.initWindow(1920, 1080, "minecraft");
     defer rl.closeWindow();
     rl.hideCursor();
     defer rl.showCursor();
 
+    var chat_message: std.ArrayListUnmanaged(u8) = .empty;
+    var state: enum {
+        gaming,
+        chat,
+    } = .gaming;
+
     while (!rl.windowShouldClose()) {
         {
             game.mutex.lock();
             defer game.mutex.unlock();
 
-            game.yaw -=
-                rl.getMouseDelta().x * 0.01;
-            game.pitch -=
-                rl.getMouseDelta().y * 0.01;
-            game.pitch = std.math.clamp(game.pitch, -std.math.pi / 3.0, std.math.pi / 3.0);
+            if (rl.isKeyPressed(.semicolon)) {
+                state = switch (state) {
+                    .gaming => .chat,
+                    .chat => .gaming,
+                };
+            }
+            switch (state) {
+                .chat => {
+                    if (rl.isKeyPressed(.enter)) {
+                        game.write_message = chat_message.toOwnedSlice(game.gpa) catch fail("oom", .{});
+                    } else {
+                        var key = rl.getKeyPressed();
+                        while (key != .null) : (key = rl.getKeyPressed()) {
+                            if (key == .semicolon) continue;
+                            chat_message.append(game.gpa, std.math.cast(u8, @intFromEnum(key)) orelse continue) catch fail("oom", .{});
+                        }
+                    }
+                },
+                .gaming => {
+                    game.yaw -=
+                        rl.getMouseDelta().x * 0.01;
+                    game.pitch -=
+                        rl.getMouseDelta().y * 0.01;
+                    game.pitch = std.math.clamp(game.pitch, -std.math.pi / 3.0, std.math.pi / 3.0);
 
-            const quat = rl.math.quaternionMultiply(
-                rl.math.quaternionFromEuler(0, game.yaw, 0),
-                rl.math.quaternionFromEuler(0, 0, game.pitch),
-            );
-            game.direction = rl.math.vector3RotateByQuaternion(.{
-                .x = 1,
-                .y = 0,
-                .z = 0,
-            }, quat);
-            std.log.debug("direciton vec {}", .{game.direction});
-            const speed: f64 = if (rl.isKeyDown(.left_shift)) 100 else 10;
+                    const quat = rl.math.quaternionMultiply(
+                        rl.math.quaternionFromEuler(0, game.yaw, 0),
+                        rl.math.quaternionFromEuler(0, 0, game.pitch),
+                    );
+                    game.direction = rl.math.vector3RotateByQuaternion(.{
+                        .x = 1,
+                        .y = 0,
+                        .z = 0,
+                    }, quat);
+                    std.log.debug("direciton vec {}", .{game.direction});
+                    const speed: f64 = if (rl.isKeyDown(.left_shift)) 100 else 10;
 
-            const dx = game.direction.x * rl.getFrameTime() * speed;
-            const dy = game.direction.y * rl.getFrameTime() * speed;
-            const dz = game.direction.z * rl.getFrameTime() * speed;
-            if (rl.isKeyDown(.w)) {
-                game.position[0] += dx;
-                game.position[1] += dy;
-                game.position[2] += dz;
-            }
-            if (rl.isKeyDown(.s)) {
-                game.position[0] -= dx;
-                game.position[1] -= dy;
-                game.position[2] -= dz;
-            }
-            if (rl.isKeyDown(.a)) {
-                game.position[0] += dz;
-                game.position[2] -= dx;
-            }
-            if (rl.isKeyDown(.d)) {
-                game.position[0] -= dz;
-                game.position[2] += dx;
+                    const dx = game.direction.x * rl.getFrameTime() * speed;
+                    const dy = game.direction.y * rl.getFrameTime() * speed;
+                    const dz = game.direction.z * rl.getFrameTime() * speed;
+                    if (rl.isKeyDown(.w)) {
+                        game.position[0] += dx;
+                        game.position[1] += dy;
+                        game.position[2] += dz;
+                    }
+                    if (rl.isKeyDown(.s)) {
+                        game.position[0] -= dx;
+                        game.position[1] -= dy;
+                        game.position[2] -= dz;
+                    }
+                    if (rl.isKeyDown(.a)) {
+                        game.position[0] += dz;
+                        game.position[2] -= dx;
+                    }
+                    if (rl.isKeyDown(.d)) {
+                        game.position[0] -= dz;
+                        game.position[2] += dx;
+                    }
+                },
             }
         }
         {
@@ -119,7 +148,7 @@ pub fn gameLoop(game: *Game) void {
                     .z = @floatCast(game.position[2]),
                 },
             };
-            {
+            if (false) {
                 camera.begin();
                 defer camera.end();
 
@@ -215,6 +244,16 @@ pub fn gameLoop(game: *Game) void {
                 30,
                 .red,
             );
+
+            if (state == .chat) {
+                rl.drawText(
+                    std.fmt.bufPrintZ(&buf, "{s}_", .{chat_message.items}) catch unreachable,
+                    0,
+                    @divFloor(rl.getScreenHeight() + 180, 2),
+                    30,
+                    .red,
+                );
+            }
         }
     }
     game.mutex.lock();
@@ -299,6 +338,12 @@ pub fn runClient(gpa: std.mem.Allocator, game: *Game, ip: []const u8, port: u16)
         );
         game.mutex.lock();
         defer game.mutex.unlock();
+
+        if (game.write_message) |message| {
+            try Packet.write(.{ .@"Chat Message" = .{ .message = .fromUtf8(message) } }, stream.writer());
+            game.gpa.free(message);
+            game.write_message = null;
+        }
 
         switch (packet) {
             .@"Spawn Named Entity" => |p| {
