@@ -10,11 +10,11 @@ pub fn build(b: *std.Build) void {
     });
 
     const exe_mod = b.createModule(.{
-        .root_source_file = b.path("src/main.zig"),
+        .root_source_file = b.path("src/Game.zig"),
         .target = target,
         .optimize = optimize,
     });
-    exe_mod.addImport("rl", raylib_dep.module("raylib"));
+    exe_mod.addImport("raylib", raylib_dep.module("raylib"));
     exe_mod.linkLibrary(raylib_dep.artifact("raylib"));
 
     const exe = b.addExecutable(.{

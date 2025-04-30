@@ -226,11 +226,25 @@ pub const Packet = union(PacketId) {
         on_ground: bool,
     },
     @"Player Digging": struct {
-        status: u8,
+        status: enum(u8) {
+            @"Started digging" = 0,
+            @"Cancelled digging" = 1,
+            @"Finished digging" = 2,
+            @"Drop item stack" = 3,
+            @"Drop item" = 4,
+            @"Shoot arrow / finish eating" = 5,
+        },
         x: i32,
-        y: i16,
+        y: u8,
         z: i32,
-        face: u8,
+        face: enum(u8) {
+            @"-y" = 0,
+            @"+y" = 1,
+            @"-z" = 2,
+            @"+z" = 3,
+            @"-x" = 4,
+            @"+x" = 5,
+        },
     },
     @"Player Block Placement": struct {
         x: i32,
@@ -281,8 +295,8 @@ pub const Packet = union(PacketId) {
         x: i32,
         y: i32,
         z: i32,
-        yaw: u8,
-        pitch: u8,
+        yaw: i8,
+        pitch: i8,
         current_item: i16,
         metadata: EntityMetadata,
     },
@@ -435,7 +449,7 @@ pub const Packet = union(PacketId) {
         data_size: u32,
         data: []const packed struct {
             block_metadata: u4,
-            block_id: u16,
+            block_id: u12,
             y_coodrinate: u8,
             /// relative to chunk
             z_coodrinate: u4,
@@ -705,7 +719,7 @@ pub const Packet = union(PacketId) {
             log.err("unknown packed {x}", .{int});
             return error.UnknownPacket;
         };
-        // const packet_id: PacketId = try reader.readEnum(PacketId, .big);
+
         log.debug("got packet {s}", .{@tagName(packet_id)});
         switch (packet_id) {
             inline else => |id| blk: {
@@ -715,7 +729,6 @@ pub const Packet = union(PacketId) {
                 if (T == void) break :blk;
 
                 inline for (@typeInfo(T).@"struct".fields) |field| {
-                    const skip = field.name[0] == '_';
                     const F = @FieldType(T, field.name);
 
                     switch (F) {
@@ -744,13 +757,9 @@ pub const Packet = union(PacketId) {
                             @field(result, field.name) = metadata;
                         },
                         String => {
-                            if (skip) {
-                                log.debug("skip string", .{});
-                                try skipString(reader);
-                            } else {
-                                @field(result, field.name) = .fromUtf8(try readString(reader, arena));
-                                log.debug("read string {s}", .{@field(result, field.name).utf8});
-                            }
+                            @field(result, field.name) = .fromUtf8(try readString(reader, arena));
+                            log.debug("read string {s}", .{@field(result, field.name).utf8});
+                            // }
                         },
                         []const String => {
                             const len = @field(result, std.mem.trimLeft(u8, field.name, "_") ++ "_len");
@@ -787,7 +796,9 @@ pub const Packet = union(PacketId) {
                                     @field(result, field.name) = try reader.readEnum(F, .big);
                                 },
                                 .float => |f| {
-                                    @field(result, field.name) = @bitCast(try reader.readInt(@Type(.{ .int = .{ .bits = f.bits, .signedness = .unsigned } }), .big));
+                                    @field(result, field.name) = @bitCast(try reader.readInt(@Type(.{
+                                        .int = .{ .bits = f.bits, .signedness = .unsigned },
+                                    }), .big));
                                     log.debug("{s}: {d}", .{ field.name, @field(result, field.name) });
                                 },
                                 .bool => {
@@ -813,6 +824,7 @@ pub const Packet = union(PacketId) {
                                             else => comptime unreachable,
                                         }
                                     }
+                                    @field(result, field.name) = children;
                                 },
                                 else => {
                                     @compileLog(T, F);
@@ -830,6 +842,7 @@ pub const Packet = union(PacketId) {
     }
 
     pub fn write(packet: Packet, writer: anytype) !void {
+        log.debug("sending {s}", .{@tagName(packet)});
         @setEvalBranchQuota(2000);
         try writer.writeInt(u8, @intFromEnum(packet), .big);
         switch (packet) {
@@ -848,6 +861,13 @@ pub const Packet = union(PacketId) {
                         []const u8 => {
                             try writer.writeAll(value);
                         },
+                        ?Slot => unreachable,
+                        bool => {
+                            try writer.writeByte(@intFromBool(value));
+                        },
+                        f32, f64 => {
+                            try writer.writeAll(&std.mem.toBytes(value));
+                        },
                         else => {
                             switch (@typeInfo(F)) {
                                 .int => {
@@ -856,7 +876,10 @@ pub const Packet = union(PacketId) {
                                 .@"enum" => {
                                     try writer.writeInt(@TypeOf(@intFromEnum(value)), @intFromEnum(value), .big);
                                 },
-                                else => unreachable,
+                                else => {
+                                    // @compileLog(e);
+                                    unreachable;
+                                },
                             }
                         },
                     }
@@ -905,33 +928,4 @@ fn readString(reader: anytype, alloc: std.mem.Allocator) ![]const u8 {
     swapU16Slice(raw_string);
 
     return try std.unicode.utf16LeToUtf8Alloc(alloc, raw_string);
-}
-
-pub fn handshake(arena: std.mem.Allocator, stream: std.net.Stream, username: []const u8, ip: []const u8, port: u16) !void {
-    try (Packet{ .Handshake = .{
-        .protocol_version = 61,
-        .username = .fromUtf8(username),
-        .server_host = .fromUtf8(ip),
-        .server_port = port,
-    } }).write(stream.writer());
-
-    {
-        const packet = try Packet.read(stream.reader(), arena);
-        std.debug.print("{s}", .{@tagName(packet)});
-    }
-    // Client Statuses (0xCD)
-    try Packet.write(.{ .@"Client Statuses" = .{
-        .payload = .innitial_spawn,
-    } }, stream.writer());
-
-    // Login Request (0x01)
-    {
-        const packet = try Packet.read(stream.reader(), arena);
-        std.debug.print("{}", .{packet});
-    }
-    // Spawn Position (0x06)
-    {
-        const packet = try Packet.read(stream.reader(), arena);
-        std.debug.print("pos {}", .{packet.@"Spawn Position"});
-    }
 }
