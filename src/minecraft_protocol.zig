@@ -2,7 +2,7 @@ const std = @import("std");
 
 const log = std.log.scoped(.minecraft_network);
 
-const PacketId = enum(u8) {
+pub const PacketId = enum(u8) {
     // zig fmt: off
     @"Keep Alive"                    = 0x00,
     @"Login Request"                 = 0x01,
@@ -140,7 +140,7 @@ pub const Packet = union(PacketId) {
     },
     @"Login Request": struct {
         player_id: i32,
-        _level_type: String,
+        level_type: String,
         // TODO: Bit 3 (0x8) is the hardcore flag
         game_mode: enum(u8) {
             survival = 0,
@@ -710,186 +710,194 @@ pub const Packet = union(PacketId) {
     @"Disconnect/Kick": struct {
         reason: String,
     },
-
-    pub fn read(reader: anytype, arena: std.mem.Allocator) !Packet {
-        @setEvalBranchQuota(2000);
-
-        const int = try reader.readInt(@typeInfo(PacketId).@"enum".tag_type, .big);
-        const packet_id = std.meta.intToEnum(PacketId, int) catch {
-            log.err("unknown packed {x}", .{int});
-            return error.UnknownPacket;
-        };
-
-        log.debug("got packet {s}", .{@tagName(packet_id)});
-        switch (packet_id) {
-            inline else => |id| blk: {
-                const T = @FieldType(Packet, @tagName(id));
-                var result: T = undefined;
-
-                if (T == void) break :blk;
-
-                inline for (@typeInfo(T).@"struct".fields) |field| {
-                    const F = @FieldType(T, field.name);
-
-                    switch (F) {
-                        EntityMetadata => {
-                            var metadata: EntityMetadata = @splat(.empty);
-                            while (true) {
-                                const item = try reader.readByte();
-                                if (item == 0x7F) break;
-                                const index = item & 0x1F;
-                                const @"type" = item >> 5;
-
-                                if (@"type" == 0) metadata[index] = .{ .byte = try reader.readByte() };
-                                if (@"type" == 1) metadata[index] = .{ .short = try reader.readInt(u16, .big) };
-                                if (@"type" == 2) metadata[index] = .{ .int = try reader.readInt(u32, .big) };
-                                if (@"type" == 3) metadata[index] = .{ .float = @bitCast(try reader.readInt(u32, .big)) };
-                                if (@"type" == 4) metadata[index] = .{ .string = .{ .utf8 = try readString(reader, arena) } };
-                                if (@"type" == 5) metadata[index] = .{ .slot = try Slot.parse(reader) };
-                                if (@"type" == 6) {
-                                    metadata[index] = .{ .pos = .{
-                                        .x = try reader.readInt(i32, .big),
-                                        .y = try reader.readInt(i32, .big),
-                                        .z = try reader.readInt(i32, .big),
-                                    } };
-                                }
-                            }
-                            @field(result, field.name) = metadata;
-                        },
-                        String => {
-                            @field(result, field.name) = .fromUtf8(try readString(reader, arena));
-                            log.debug("read string {s}", .{@field(result, field.name).utf8});
-                            // }
-                        },
-                        []const String => {
-                            const len = @field(result, std.mem.trimLeft(u8, field.name, "_") ++ "_len");
-                            const strings = try arena.alloc(String, len);
-                            for (strings) |*string| {
-                                string.* = .{ .utf8 = try readString(reader, arena) };
-                            }
-                            @field(result, field.name) = strings;
-                        },
-                        []const u8 => {
-                            const len = @field(result, std.mem.trimLeft(u8, field.name, "_") ++ "_len");
-                            const buffer = try arena.alloc(u8, @intCast(len));
-                            _ = try reader.readAll(buffer);
-                            @field(result, field.name) = buffer;
-                        },
-                        ?Slot => {
-                            @field(result, field.name) = try Slot.parse(reader);
-                        },
-                        []const ?Slot => {
-                            const len = @field(result, std.mem.trimLeft(u8, field.name, "_") ++ "_len");
-                            const slots = try arena.alloc(?Slot, len);
-                            for (slots) |*slot| {
-                                slot.* = try Slot.parse(reader);
-                            }
-                            @field(result, field.name) = slots;
-                        },
-                        else => {
-                            switch (@typeInfo(F)) {
-                                .int => {
-                                    @field(result, field.name) = try reader.readInt(F, .big);
-                                    log.debug("{s}: {d}", .{ field.name, @field(result, field.name) });
-                                },
-                                .@"enum" => {
-                                    @field(result, field.name) = try reader.readEnum(F, .big);
-                                },
-                                .float => |f| {
-                                    @field(result, field.name) = @bitCast(try reader.readInt(@Type(.{
-                                        .int = .{ .bits = f.bits, .signedness = .unsigned },
-                                    }), .big));
-                                    log.debug("{s}: {d}", .{ field.name, @field(result, field.name) });
-                                },
-                                .bool => {
-                                    @field(result, field.name) = try reader.readInt(u8, .big) != 0;
-                                    log.debug("{s}: {}", .{ field.name, @field(result, field.name) });
-                                },
-                                .@"struct" => |s| {
-                                    comptime std.debug.assert(s.layout == .@"packed");
-                                    @field(result, field.name) = try reader.readStruct(F);
-                                },
-                                .pointer => |p| {
-                                    const CT = p.child;
-                                    const layout = @typeInfo(CT).@"struct".layout;
-                                    comptime std.debug.assert(p.size == .slice);
-
-                                    const len = @field(result, field.name ++ "_len");
-                                    const children = try arena.alloc(CT, len);
-                                    _ = try reader.readAll(@ptrCast(children));
-                                    for (children) |*child| {
-                                        switch (layout) {
-                                            .@"extern" => std.mem.byteSwapAllFields(CT, child),
-                                            .@"packed" => {},
-                                            else => comptime unreachable,
-                                        }
-                                    }
-                                    @field(result, field.name) = children;
-                                },
-                                else => {
-                                    @compileLog(T, F);
-                                    comptime unreachable;
-                                },
-                            }
-                        },
-                    }
-                }
-
-                return @unionInit(Packet, @tagName(id), result);
-            },
-        }
-        unreachable;
-    }
-
-    pub fn write(packet: Packet, writer: anytype) !void {
-        log.debug("sending {s}", .{@tagName(packet)});
-        @setEvalBranchQuota(2000);
-        try writer.writeInt(u8, @intFromEnum(packet), .big);
-        switch (packet) {
-            inline else => |content| blk: {
-                const T = @TypeOf(content);
-                if (T == void) break :blk;
-
-                inline for (@typeInfo(@TypeOf(content)).@"struct".fields) |field| {
-                    const value = @field(content, field.name);
-                    const F = @FieldType(T, field.name);
-
-                    switch (F) {
-                        String => {
-                            try writeString(writer, value.utf8);
-                        },
-                        []const u8 => {
-                            try writer.writeAll(value);
-                        },
-                        ?Slot => unreachable,
-                        bool => {
-                            try writer.writeByte(@intFromBool(value));
-                        },
-                        f32, f64 => {
-                            try writer.writeAll(&std.mem.toBytes(value));
-                        },
-                        else => {
-                            switch (@typeInfo(F)) {
-                                .int => {
-                                    try writer.writeInt(@TypeOf(value), value, .big);
-                                },
-                                .@"enum" => {
-                                    try writer.writeInt(@TypeOf(@intFromEnum(value)), @intFromEnum(value), .big);
-                                },
-                                else => {
-                                    // @compileLog(e);
-                                    unreachable;
-                                },
-                            }
-                        },
-                    }
-
-                    if (@typeInfo(@TypeOf(value)) == .int) {}
-                }
-            },
-        }
-    }
 };
+
+pub fn read(reader: anytype, arena: std.mem.Allocator) !Packet {
+    @setEvalBranchQuota(2000);
+
+    const int = try reader.readInt(@typeInfo(PacketId).@"enum".tag_type, .big);
+    const packet_id = std.meta.intToEnum(PacketId, int) catch {
+        log.err("unknown packed {x}", .{int});
+        return error.UnknownPacket;
+    };
+
+    log.debug("got packet {s}", .{@tagName(packet_id)});
+    switch (packet_id) {
+        inline else => |id| blk: {
+            const T = @FieldType(Packet, @tagName(id));
+            var result: T = undefined;
+
+            if (T == void) break :blk;
+
+            inline for (@typeInfo(T).@"struct".fields) |field| {
+                const F = @FieldType(T, field.name);
+
+                switch (F) {
+                    EntityMetadata => {
+                        var metadata: EntityMetadata = @splat(.empty);
+                        while (true) {
+                            const item = try reader.readByte();
+                            if (item == 0x7F) break;
+                            const index = item & 0x1F;
+                            const @"type" = item >> 5;
+
+                            if (@"type" == 0) metadata[index] = .{ .byte = try reader.readByte() };
+                            if (@"type" == 1) metadata[index] = .{ .short = try reader.readInt(u16, .big) };
+                            if (@"type" == 2) metadata[index] = .{ .int = try reader.readInt(u32, .big) };
+                            if (@"type" == 3) metadata[index] = .{ .float = @bitCast(try reader.readInt(u32, .big)) };
+                            if (@"type" == 4) metadata[index] = .{ .string = .{ .utf8 = try readString(reader, arena) } };
+                            if (@"type" == 5) metadata[index] = .{ .slot = try Slot.parse(reader) };
+                            if (@"type" == 6) {
+                                metadata[index] = .{ .pos = .{
+                                    .x = try reader.readInt(i32, .big),
+                                    .y = try reader.readInt(i32, .big),
+                                    .z = try reader.readInt(i32, .big),
+                                } };
+                            }
+                        }
+                        @field(result, field.name) = metadata;
+                    },
+                    String => {
+                        @field(result, field.name) = .fromUtf8(try readString(reader, arena));
+                        log.debug("read string {s}", .{@field(result, field.name).utf8});
+                        // }
+                    },
+                    []const String => {
+                        const len = @field(result, std.mem.trimLeft(u8, field.name, "_") ++ "_len");
+                        const strings = try arena.alloc(String, len);
+                        for (strings) |*string| {
+                            string.* = .{ .utf8 = try readString(reader, arena) };
+                        }
+                        @field(result, field.name) = strings;
+                    },
+                    []const u8 => {
+                        const len = @field(result, std.mem.trimLeft(u8, field.name, "_") ++ "_len");
+                        const buffer = try arena.alloc(u8, @intCast(len));
+                        _ = try reader.readAll(buffer);
+                        @field(result, field.name) = buffer;
+                    },
+                    ?Slot => {
+                        @field(result, field.name) = try Slot.parse(reader);
+                    },
+                    []const ?Slot => {
+                        const len = @field(result, std.mem.trimLeft(u8, field.name, "_") ++ "_len");
+                        const slots = try arena.alloc(?Slot, len);
+                        for (slots) |*slot| {
+                            slot.* = try Slot.parse(reader);
+                        }
+                        @field(result, field.name) = slots;
+                    },
+                    else => {
+                        switch (@typeInfo(F)) {
+                            .int => {
+                                @field(result, field.name) = try reader.readInt(F, .big);
+                                log.debug("{s}: {d}", .{ field.name, @field(result, field.name) });
+                            },
+                            .@"enum" => {
+                                @field(result, field.name) = try reader.readEnum(F, .big);
+                            },
+                            .float => |f| {
+                                @field(result, field.name) = @bitCast(try reader.readInt(@Type(.{
+                                    .int = .{ .bits = f.bits, .signedness = .unsigned },
+                                }), .big));
+                                log.debug("{s}: {d}", .{ field.name, @field(result, field.name) });
+                            },
+                            .bool => {
+                                @field(result, field.name) = try reader.readInt(u8, .big) != 0;
+                                log.debug("{s}: {}", .{ field.name, @field(result, field.name) });
+                            },
+                            .@"struct" => |s| {
+                                comptime std.debug.assert(s.layout == .@"packed");
+                                @field(result, field.name) = try reader.readStruct(F);
+                            },
+                            .pointer => |p| {
+                                const CT = p.child;
+                                const layout = @typeInfo(CT).@"struct".layout;
+                                comptime std.debug.assert(p.size == .slice);
+
+                                const len = @field(result, field.name ++ "_len");
+                                const children = try arena.alloc(CT, len);
+                                _ = try reader.readAll(@ptrCast(children));
+                                for (children) |*child| {
+                                    switch (layout) {
+                                        .@"extern" => std.mem.byteSwapAllFields(CT, child),
+                                        .@"packed" => {},
+                                        else => comptime unreachable,
+                                    }
+                                }
+                                @field(result, field.name) = children;
+                            },
+                            else => {
+                                @compileLog(T, F);
+                                comptime unreachable;
+                            },
+                        }
+                    },
+                }
+            }
+
+            return @unionInit(Packet, @tagName(id), result);
+        },
+    }
+    unreachable;
+}
+
+pub fn readExpectedPacket(reader: anytype, arena: std.mem.Allocator, comptime packet_id: PacketId) !@FieldType(Packet, @tagName(packet_id)) {
+    const packet = try read(reader, arena);
+    if (packet == packet_id) {
+        return @field(packet, @tagName(packet_id));
+    }
+    return error.UnexpectedPacket;
+}
+
+pub fn write(packet: Packet, writer: anytype) !void {
+    log.debug("sending {s}", .{@tagName(packet)});
+    @setEvalBranchQuota(2000);
+    try writer.writeInt(u8, @intFromEnum(packet), .big);
+    switch (packet) {
+        inline else => |content| blk: {
+            const T = @TypeOf(content);
+            if (T == void) break :blk;
+
+            inline for (@typeInfo(@TypeOf(content)).@"struct".fields) |field| {
+                const value = @field(content, field.name);
+                const F = @FieldType(T, field.name);
+
+                switch (F) {
+                    String => {
+                        try writeString(writer, value.utf8);
+                    },
+                    []const u8 => {
+                        try writer.writeAll(value);
+                    },
+                    ?Slot => unreachable,
+                    bool => {
+                        try writer.writeByte(@intFromBool(value));
+                    },
+                    f32, f64 => {
+                        try writer.writeAll(&std.mem.toBytes(value));
+                    },
+                    else => {
+                        switch (@typeInfo(F)) {
+                            .int => {
+                                try writer.writeInt(@TypeOf(value), value, .big);
+                            },
+                            .@"enum" => {
+                                try writer.writeInt(@TypeOf(@intFromEnum(value)), @intFromEnum(value), .big);
+                            },
+                            else => {
+                                // @compileLog(e);
+                                unreachable;
+                            },
+                        }
+                    },
+                }
+
+                if (@typeInfo(@TypeOf(value)) == .int) {}
+            }
+        },
+    }
+}
 
 fn writeRawString(writer: anytype, str_be: []const u16) !void {
     try writer.writeInt(u16, @intCast(str_be.len), .big);

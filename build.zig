@@ -4,18 +4,26 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const raylib_dep = b.dependency("raylib", .{
+    const dep_imgui = b.dependency("imgui", .{
         .target = target,
         .optimize = optimize,
     });
+    const dep_sokol = b.dependency("sokol", .{
+        .target = target,
+        .optimize = optimize,
+        .with_sokol_imgui = true,
+    });
+    dep_sokol.artifact("sokol_clib").addIncludePath(dep_imgui.path("src"));
 
     const exe_mod = b.createModule(.{
         .root_source_file = b.path("src/Game.zig"),
         .target = target,
         .optimize = optimize,
+        .imports = &.{
+            .{ .name = "sokol", .module = dep_sokol.module("sokol") },
+            .{ .name = "imgui", .module = dep_imgui.module("cimgui") },
+        },
     });
-    exe_mod.addImport("raylib", raylib_dep.module("raylib"));
-    exe_mod.linkLibrary(raylib_dep.artifact("raylib"));
 
     const exe = b.addExecutable(.{
         .name = "minecraft_protocol",
