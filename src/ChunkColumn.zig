@@ -25,25 +25,27 @@ const Chunk = struct {
 };
 
 pub fn parse(
-    chunk_column: *ChunkColumn,
     stream: anytype,
     primary_mask: u16,
     add_mask: u16,
     skylight: bool,
     ground_up_continious: bool,
-) !void {
-    try parseSection(chunk_column, stream, "block_type", primary_mask);
-    try parseSection(chunk_column, stream, "block_meta", primary_mask);
-    try parseSection(chunk_column, stream, "block_light", primary_mask);
+) !ChunkColumn {
+    var chunk_column: ChunkColumn = undefined;
+    try parseSection(&chunk_column, stream, "block_type", primary_mask);
+    try parseSection(&chunk_column, stream, "block_meta", primary_mask);
+    try parseSection(&chunk_column, stream, "block_light", primary_mask);
     if (skylight) {
-        try parseSection(chunk_column, stream, "sky_light", primary_mask);
+        try parseSection(&chunk_column, stream, "sky_light", primary_mask);
     }
-    try parseSection(chunk_column, stream, "add_array", add_mask);
+    try parseSection(&chunk_column, stream, "add_array", add_mask);
     if (ground_up_continious) {
         chunk_column.biome = @bitCast(try stream.readBytesNoEof(256));
     } else {
         chunk_column.biome = null;
     }
+
+    return chunk_column;
 }
 
 pub fn parseSection(chunk_column: *ChunkColumn, stream: anytype, comptime section_name: []const u8, mask: u16) !void {

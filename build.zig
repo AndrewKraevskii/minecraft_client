@@ -13,7 +13,13 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .with_sokol_imgui = true,
     });
+
+    const dep_sokol_2d = b.dependency("sokol_2d", .{
+        .target = target,
+        .optimize = optimize,
+    });
     dep_sokol.artifact("sokol_clib").addIncludePath(dep_imgui.path("src"));
+    dep_sokol_2d.module("sokol_2d").addImport("sokol", dep_sokol.module("sokol"));
 
     const exe_mod = b.createModule(.{
         .root_source_file = b.path("src/Game.zig"),
@@ -21,6 +27,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .imports = &.{
             .{ .name = "sokol", .module = dep_sokol.module("sokol") },
+            .{ .name = "sokol_2d", .module = dep_sokol_2d.module("sokol_2d") },
             .{ .name = "imgui", .module = dep_imgui.module("cimgui") },
         },
     });

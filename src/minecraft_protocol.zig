@@ -435,12 +435,12 @@ pub const Packet = union(PacketId) {
     },
     @"Chunk Data": struct {
         x: i32,
-        y: i32,
+        z: i32,
         ground_up_continuous: bool,
-        primary_bit_map: u16,
-        add_bit_map: u16,
-        compressed_data_len: i32,
-        compressed_data: []const u8,
+        primary_bitmap: u16,
+        add_bitmap: u16,
+        data_len: i32,
+        data: []const u8,
     },
     @"Multi Block Change": struct {
         chunk_x: i32,

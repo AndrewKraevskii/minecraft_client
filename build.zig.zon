@@ -12,6 +12,10 @@
             .url = "git+https://github.com/floooh/dcimgui.git#716dae9c6a03eec642a4fb2ac28ebcd2f52f76ba",
             .hash = "cimgui-0.1.0-44ClkYmBhgC-Q3NWFyYqwThmmTdmkoIlAjF4ABfyqIAZ",
         },
+        .sokol_2d = .{
+            .url = "git+https://github.com/AndrewKraevskii/sokol_2d/#e7894c617f6bce00b052b1f6cc61ddf740e84de1",
+            .hash = "sokol_2d-0.0.0-4uM6qQ-zAADdFX-KplnPkGJ6lCn_B-TiPynkrWXbNCwM",
+        },
     },
     .paths = .{
         "build.zig",

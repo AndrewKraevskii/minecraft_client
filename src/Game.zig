@@ -3,6 +3,7 @@ const Mutex = std.Thread.Mutex;
 
 const ig = @import("imgui");
 const sokol = @import("sokol");
+const Sokol2d = @import("sokol_2d");
 const sg = sokol.gfx;
 const sapp = sokol.app;
 const sglue = sokol.glue;
@@ -19,7 +20,7 @@ pub const std_options: std.Options = .{
     .log_scope_levels = &.{
         .{
             .scope = .minecraft_network,
-            .level = .debug,
+            .level = .err,
         },
     },
 };
@@ -33,12 +34,22 @@ world: ?World,
 network_thread: std.Thread,
 
 running: bool,
-pass_action: sg.PassAction,
+
+graphics: struct {
+    clear_action: sg.PassAction,
+    load_action: sg.PassAction,
+    sokol_2d: Sokol2d,
+},
 
 ui_imgui: UiImgui,
+events: Events,
+
+const Events = std.ArrayListUnmanaged(World.Event);
 
 fn sokolInit(user_data: ?*anyopaque) callconv(.c) void {
     const state: *@This() = @ptrCast(@alignCast(user_data));
+
+    var gpa: std.heap.GeneralPurposeAllocator(.{}) = .init;
 
     // initialize sokol-gfx
     sg.setup(.{
@@ -51,19 +62,28 @@ fn sokolInit(user_data: ?*anyopaque) callconv(.c) void {
     });
     // initial clear color
 
+    const sokol2d = Sokol2d.init(gpa.allocator()) catch @panic("OOM");
+
     state.* = .{
         .network_thread = undefined,
         .running = true,
-        .pass_action = .{},
-        .gpa = .init,
+        .graphics = .{
+            .sokol_2d = sokol2d,
+            .clear_action = .{},
+            .load_action = .{},
+        },
+        .gpa = gpa,
         .ui_imgui = .init,
         .world_mutex = .{},
         .world = null,
+        .events = .empty,
     };
-
-    state.pass_action.colors[0] = .{
+    state.graphics.clear_action.colors[0] = .{
         .load_action = .CLEAR,
-        .clear_value = .{ .r = 0.0, .g = 0.5, .b = 1.0, .a = 1.0 },
+        .clear_value = .{ .r = 0, .g = 0, .b = 0, .a = 1.0 },
+    };
+    state.graphics.load_action.colors[0] = .{
+        .load_action = .LOAD,
     };
 }
 
@@ -72,19 +92,87 @@ const UiImgui = struct {
     ip_buffer: ["255.255.255.255".len:0]u8 = ("144.76.153.125" ++ "\x00").*,
     port: u16 = 25633,
 
+    send_message: [100:0]u8 = @splat(0),
+
     const init: UiImgui = .{};
 };
 
 fn update(state: *@This()) void {
     if (state.world) |*world| {
-        world.update(1.0 / 60.0);
+        world.tick(state.events.items, 1.0 / 60.0);
+        state.events.clearRetainingCapacity();
     }
 }
 
 fn sokolFrame(user_data: ?*anyopaque) callconv(.c) void {
+    const width: f32 = sokol.app.widthf();
+    const height: f32 = sokol.app.heightf();
+
     const state: *@This() = @ptrCast(@alignCast(user_data));
 
+    state.world_mutex.lock();
+    defer state.world_mutex.unlock();
+
     state.update();
+
+    if (state.world) |*world| {
+        state.graphics.sokol_2d.begin(.{
+            .viewport = .{
+                .start = .zero,
+                .end = .{
+                    .x = width,
+                    .y = height,
+                },
+            },
+            .coordinates = .{
+                .start = .{
+                    .x = -width / 2,
+                    .y = -height / 2,
+                },
+                .end = .{
+                    .x = width / 2,
+                    .y = height / 2,
+                },
+            },
+        });
+
+        const spawn_x, _, const spawn_z = world.player().position;
+        state.graphics.sokol_2d.drawRect(
+            .fromCenterSize(.{ .x = 0, .y = 0 }, .{
+                .x = World.render_distance * World.Chunk.size,
+                .y = World.render_distance * World.Chunk.size,
+            }),
+            .gray,
+        );
+
+        for (world.chunks.keys()) |pos| {
+            const x: f32 = @floatFromInt(pos.x);
+            const y: f32 = @floatFromInt(pos.z);
+            const square_size = 10;
+
+            state.graphics.sokol_2d.drawRect(
+                .fromCenterSize(
+                    .{
+                        .x = (x - spawn_x / World.Chunk.size) * square_size,
+                        .y = (y - spawn_z / World.Chunk.size) * square_size,
+                    },
+                    .{ .x = square_size, .y = square_size },
+                ),
+                .white,
+            );
+        }
+
+        {
+            sokol.gfx.beginPass(.{
+                .action = state.graphics.clear_action,
+                .swapchain = sokol.glue.swapchain(),
+            });
+            defer sokol.gfx.endPass();
+
+            state.graphics.sokol_2d.flush();
+        }
+        sokol.gfx.commit();
+    }
 
     { //=== UI CODE STARTS HERE
         simgui.newFrame(.{
@@ -94,13 +182,7 @@ fn sokolFrame(user_data: ?*anyopaque) callconv(.c) void {
             .dpi_scale = sapp.dpiScale(),
         });
         if (state.world) |*world| {
-            for (0..world.chat.messages.count) |message_index| {
-                const message = world.chat.messages.peekItem(message_index);
-                var buffer: [message.buffer.len + 1]u8 = undefined;
-                @memcpy(buffer[0..message.slice().len], message.slice());
-                buffer[message.slice().len] = 0;
-                ig.igText("%s", buffer[0..message.slice().len :0].ptr);
-            }
+            renderChat(&world.chat, &state.ui_imgui);
         } else {
             _ = ig.igInputText("Username", &state.ui_imgui.user_name, state.ui_imgui.user_name.len, 0);
             _ = ig.igInputText("Server IP", &state.ui_imgui.ip_buffer, state.ui_imgui.ip_buffer.len, 0);
@@ -137,14 +219,57 @@ fn sokolFrame(user_data: ?*anyopaque) callconv(.c) void {
                     stream,
                     &state.world_mutex,
                     &state.world.?,
+                    &state.events,
                 }) catch @panic("can't spawn thread");
             }
         }
-        sg.beginPass(.{ .action = state.pass_action, .swapchain = sglue.swapchain() });
+        sg.beginPass(.{ .action = state.graphics.load_action, .swapchain = sglue.swapchain() });
         simgui.render();
         sg.endPass();
         sg.commit();
     } //=== UI CODE ENDS HERE
+}
+
+fn renderChat(chat: *World.Chat, ui: *UiImgui) void {
+    var open = true;
+    _ = ig.igSetNextWindowContentSize(.{
+        .x = 300,
+        .y = 300,
+    });
+    _ = ig.igBegin("Chat", &open, 0);
+    defer _ = ig.igEnd();
+    for (chat.messages.items, 0..) |message, index| {
+        const is_last = index + 1 == chat.messages.items.len;
+        if (!is_last and message.origin == .client) continue;
+
+        var buffer: [message.bytes.buffer.len + 1]u8 = undefined;
+        @memcpy(buffer[0..message.bytes.slice().len], message.bytes.slice());
+        buffer[message.bytes.slice().len] = 0;
+
+        const red: ig.ImVec4 = .{
+            .x = 1,
+            .y = 0,
+            .z = 0,
+            .w = 1,
+        };
+        const white: ig.ImVec4 = .{
+            .x = 1,
+            .y = 1,
+            .z = 1,
+            .w = 1,
+        };
+        const color = switch (message.origin) {
+            .client => red,
+            .server => white,
+        };
+
+        ig.igTextColored(color, "%s", buffer[0..message.bytes.slice().len :0].ptr);
+    }
+
+    _ = ig.igInputText("Input", &ui.send_message, ui.send_message.len, 0);
+    if (ig.igButton("Send")) {
+        _ = chat.send(std.mem.span(@as([*:0]const u8, ui.send_message[0.. :0])), .client);
+    }
 }
 
 fn sokolEvent(ev: [*c]const sapp.Event, user_data: ?*anyopaque) callconv(.c) void {
@@ -153,12 +278,15 @@ fn sokolEvent(ev: [*c]const sapp.Event, user_data: ?*anyopaque) callconv(.c) voi
     const event = ev.?.*;
     if (simgui.handleEvent(event)) return;
 
+    state.world_mutex.lock();
+    defer state.world_mutex.unlock();
+
     switch (event.type) {
         .MOUSE_MOVE => {},
         .KEY_DOWN => switch (event.key_code) {
-            inline .W, .A, .S, .D => |key| {
-                if (state.world) |*world| {
-                    world.addEvent(.{ .player_move = switch (key) {
+            inline .W, .A, .S, .D, .LEFT_SHIFT, .LEFT_CONTROL => |key| {
+                if (state.world != null) {
+                    state.events.append(state.gpa.allocator(), .{ .player_move = switch (key) {
                         .W => .{ 1, 0, 0 },
                         .A => .{ 0, -1, 0 },
                         .S => .{ -1, 0, 0 },
@@ -166,7 +294,7 @@ fn sokolEvent(ev: [*c]const sapp.Event, user_data: ?*anyopaque) callconv(.c) voi
                         .LEFT_SHIFT => .{ 0, 1, 0 },
                         .LEFT_CONTROL => .{ 0, -1, 0 },
                         else => comptime unreachable,
-                    } });
+                    } }) catch @panic("OOM");
                 }
             },
             .ESCAPE => {
@@ -184,6 +312,7 @@ fn sokolEvent(ev: [*c]const sapp.Event, user_data: ?*anyopaque) callconv(.c) voi
 fn sokolCleanup(user_data: ?*anyopaque) callconv(.c) void {
     const state: *@This() = @ptrCast(@alignCast(user_data));
 
+    state.graphics.sokol_2d.deinit(state.gpa.allocator());
     if (state.world) |*world| {
         world.deinit(state.gpa.allocator());
     }
@@ -214,6 +343,7 @@ pub fn networkThread(
     stream: std.net.Stream,
     mutex: *Mutex,
     world: *World,
+    events: *Events,
 ) void {
     errdefer |e| {
         std.log.err("Networking thread failed with {s}", .{@errorName(e)});
@@ -233,10 +363,30 @@ pub fn networkThread(
         .send_position = .start(50 * ms, true),
     };
 
-    while (true) {
-        mutex.lock();
-        defer mutex.unlock();
+    var last_message_id: World.Chat.Message.Id = .none;
 
+    while (true) {
+        {
+            mutex.lock();
+            defer mutex.unlock();
+
+            if (world.chat.messages.getLastOrNull()) |last| {
+                if (last.id != last_message_id) {
+                    try networking.write(.{
+                        .@"Chat Message" = .{
+                            .message = .fromUtf8(last.bytes.slice()),
+                        },
+                    }, stream.writer());
+                    last_message_id = last.id;
+                }
+            }
+        }
+        const player_pos = player_pos: {
+            mutex.lock();
+            defer mutex.unlock();
+
+            break :player_pos world.player().position;
+        };
         inline for (@typeInfo(@TypeOf(timers)).@"struct".fields) |field| {
             if (@field(timers, field.name).justFinished()) {
                 const timer = @field(std.meta.FieldEnum(@TypeOf(timers)), field.name);
@@ -244,10 +394,10 @@ pub fn networkThread(
                     .send_position => {
                         try networking.write(.{
                             .@"Player Position" = .{
-                                .x = world.player.position[0],
-                                .y = world.player.position[1],
-                                .z = world.player.position[2],
-                                .stance = world.player.position[1] + 1.6,
+                                .x = player_pos[0],
+                                .y = player_pos[1],
+                                .z = player_pos[2],
+                                .stance = player_pos[1] + 1.6,
                                 .on_ground = true,
                             },
                         }, stream.writer());
@@ -261,10 +411,80 @@ pub fn networkThread(
             // send same back
             .@"Keep Alive" => try networking.write(packet, stream.writer()),
             .@"Chat Message" => |chat| {
-                world.chat.send(chat.message.utf8);
+                mutex.lock();
+                defer mutex.unlock();
+
+                last_message_id = world.chat.send(chat.message.utf8, .server);
+            },
+            .@"Spawn Named Entity" => |sp| {
+                mutex.lock();
+                defer mutex.unlock();
+                try events.append(gpa, .{
+                    .spawn_player = .{
+                        .id = @enumFromInt(sp.entity_id),
+                        .name = try .fromSlice(sp.player_name.utf8),
+                        .position = .{
+                            @floatFromInt(sp.x),
+                            @floatFromInt(sp.y),
+                            @floatFromInt(sp.z),
+                        },
+                    },
+                });
+            },
+            .@"Map Chunk Bulk" => |mcb| {
+                var reader = std.io.fixedBufferStream(mcb.data);
+                var dcm_buf: [1000 * 1024]u8 = undefined;
+                var writer = std.io.fixedBufferStream(&dcm_buf);
+                try std.compress.zlib.decompress(reader.reader(), writer.writer());
+                var fbr = std.io.fixedBufferStream(&dcm_buf);
+                for (mcb.chunk_column) |chunk_column_meta| {
+                    const chunk_column = try ChunkColumn.parse(
+                        fbr.reader(),
+                        chunk_column_meta.primary_bitmap,
+                        chunk_column_meta.add_bitmap,
+                        mcb.sky_light_sent,
+                        true,
+                    );
+                    mutex.lock();
+                    defer mutex.unlock();
+                    for (chunk_column.chunks, 0..) |maybe_chunks, y| {
+                        if (maybe_chunks) |chunk| {
+                            world.loadChunk(.{
+                                .x = chunk_column_meta.chunk_x,
+                                .y = @intCast(y),
+                                .z = chunk_column_meta.chunk_z,
+                            }, .{ .block_type = chunk.block_type });
+                        }
+                    }
+                }
+            },
+            .@"Chunk Data" => |cd| {
+                var reader = std.io.fixedBufferStream(cd.data);
+                var dcm_buf: [1000 * 1024]u8 = undefined;
+                var writer = std.io.fixedBufferStream(&dcm_buf);
+                try std.compress.zlib.decompress(reader.reader(), writer.writer());
+                var fbr = std.io.fixedBufferStream(&dcm_buf);
+                const chunk_column = try ChunkColumn.parse(
+                    fbr.reader(),
+                    cd.primary_bitmap,
+                    cd.add_bitmap,
+                    true,
+                    cd.ground_up_continuous,
+                );
+                mutex.lock();
+                defer mutex.unlock();
+                for (chunk_column.chunks, 0..) |maybe_chunks, y| {
+                    if (maybe_chunks) |chunk| {
+                        world.loadChunk(.{
+                            .x = cd.x,
+                            .y = @intCast(y * 16),
+                            .z = cd.z,
+                        }, .{ .block_type = chunk.block_type });
+                    }
+                }
             },
             else => {
-                std.log.debug("got packet {s}", .{@tagName(packet)});
+                // std.log.debug("got packet {s}", .{@tagName(packet)});
             },
         }
 
@@ -412,5 +632,10 @@ pub fn worldHandshake(
         };
     };
 
-    return World.init(gpa, username, spawn_position);
+    return World.init(
+        gpa,
+        username,
+        spawn_position,
+        @enumFromInt(login_request.player_id),
+    );
 }
