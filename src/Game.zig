@@ -12,6 +12,7 @@ const simgui = sokol.imgui;
 const ChunkColumn = @import("ChunkColumn.zig");
 const networking = @import("minecraft_protocol.zig");
 const Packet = networking.Packet;
+const Timer = @import("Timer.zig");
 const World = @import("World.zig");
 
 pub const std_options: std.Options = .{
@@ -27,18 +28,14 @@ const Game = @This();
 
 gpa: std.heap.GeneralPurposeAllocator(.{}),
 
+world_mutex: Mutex,
+world: ?World,
+network_thread: std.Thread,
+
 running: bool,
 pass_action: sg.PassAction,
 
 ui_imgui: UiImgui,
-
-pub fn deinit(game: *Game) void {
-    game.mutex.lock();
-    defer game.mutex.unlock();
-    game.chunks_pool.deinit();
-    game.chunks.deinit(game.gpa);
-    game.full_arena.deinit();
-}
 
 fn sokolInit(user_data: ?*anyopaque) callconv(.c) void {
     const state: *@This() = @ptrCast(@alignCast(user_data));
@@ -55,10 +52,13 @@ fn sokolInit(user_data: ?*anyopaque) callconv(.c) void {
     // initial clear color
 
     state.* = .{
+        .network_thread = undefined,
         .running = true,
         .pass_action = .{},
         .gpa = .init,
         .ui_imgui = .init,
+        .world_mutex = .{},
+        .world = null,
     };
 
     state.pass_action.colors[0] = .{
@@ -75,8 +75,16 @@ const UiImgui = struct {
     const init: UiImgui = .{};
 };
 
+fn update(state: *@This()) void {
+    if (state.world) |*world| {
+        world.update(1.0 / 60.0);
+    }
+}
+
 fn sokolFrame(user_data: ?*anyopaque) callconv(.c) void {
     const state: *@This() = @ptrCast(@alignCast(user_data));
+
+    state.update();
 
     { //=== UI CODE STARTS HERE
         simgui.newFrame(.{
@@ -85,25 +93,53 @@ fn sokolFrame(user_data: ?*anyopaque) callconv(.c) void {
             .delta_time = sapp.frameDuration(),
             .dpi_scale = sapp.dpiScale(),
         });
+        if (state.world) |*world| {
+            for (0..world.chat.messages.count) |message_index| {
+                const message = world.chat.messages.peekItem(message_index);
+                var buffer: [message.buffer.len + 1]u8 = undefined;
+                @memcpy(buffer[0..message.slice().len], message.slice());
+                buffer[message.slice().len] = 0;
+                ig.igText("%s", buffer[0..message.slice().len :0].ptr);
+            }
+        } else {
+            _ = ig.igInputText("Username", &state.ui_imgui.user_name, state.ui_imgui.user_name.len, 0);
+            _ = ig.igInputText("Server IP", &state.ui_imgui.ip_buffer, state.ui_imgui.ip_buffer.len, 0);
+            {
+                var int: c_int = state.ui_imgui.port;
+                _ = ig.igInputInt("Port", &int);
+                state.ui_imgui.port = std.math.lossyCast(u16, int);
+            }
 
-        _ = ig.igInputText("Username", &state.ui_imgui.user_name, state.ui_imgui.user_data.len, 0);
-        _ = ig.igInputTextWithHint("Server IP", "144.76.153.125", &state.ui_imgui.ip_buffer, state.ui_imgui.ip_buffer.len, 0);
-        {
-            var int: c_int = state.ui_imgui.port;
-            _ = ig.igInputInt("Port", &int);
-            state.ui_imgui.port = std.math.lossyCast(u16, int);
+            if (ig.igButton("Connect")) connect: {
+                const ip = std.mem.span(@as([*:0]const u8, &state.ui_imgui.ip_buffer));
+                const username = std.mem.span(@as([*:0]const u8, &state.ui_imgui.user_name));
+                const port = state.ui_imgui.port;
+
+                const address = std.net.Address.parseIp4(ip, port) catch |e| {
+                    std.log.err("Failed to parse address: {s}", .{@errorName(e)});
+                    break :connect;
+                };
+                const stream = std.net.tcpConnectToAddress(address) catch |e| {
+                    std.log.err("Failed to handshake with server: {s}", .{@errorName(e)});
+                    break :connect;
+                };
+                const world = worldHandshake(
+                    state.gpa.allocator(),
+                    stream,
+                    username,
+                    ip,
+                    port,
+                ) catch fail("Failed to connect", .{});
+                state.world = world;
+
+                state.network_thread = std.Thread.spawn(.{}, networkThread, .{
+                    state.gpa.allocator(),
+                    stream,
+                    &state.world_mutex,
+                    &state.world.?,
+                }) catch @panic("can't spawn thread");
+            }
         }
-
-        if (ig.igButton("Connect")) {
-            var world = connectToServerWithHandshake(
-                state.gpa.allocator(),
-                std.mem.span(@as([*:0]const u8, &state.ui_imgui.user_name)),
-                std.mem.span(@as([*:0]const u8, &state.ui_imgui.ip_buffer)),
-                state.ui_imgui.port,
-            ) catch fail("Failed to connect", .{});
-            world.deinit();
-        }
-
         sg.beginPass(.{ .action = state.pass_action, .swapchain = sglue.swapchain() });
         simgui.render();
         sg.endPass();
@@ -113,20 +149,43 @@ fn sokolFrame(user_data: ?*anyopaque) callconv(.c) void {
 
 fn sokolEvent(ev: [*c]const sapp.Event, user_data: ?*anyopaque) callconv(.c) void {
     const state: *@This() = @ptrCast(@alignCast(user_data));
+
     const event = ev.?.*;
     if (simgui.handleEvent(event)) return;
 
     switch (event.type) {
         .MOUSE_MOVE => {},
-        .KEY_DOWN => {
-            if (event.key_code == .ESCAPE) {
+        .KEY_DOWN => switch (event.key_code) {
+            inline .W, .A, .S, .D => |key| {
+                if (state.world) |*world| {
+                    world.addEvent(.{ .player_move = switch (key) {
+                        .W => .{ 1, 0, 0 },
+                        .A => .{ 0, -1, 0 },
+                        .S => .{ -1, 0, 0 },
+                        .D => .{ 0, 1, 0 },
+                        .LEFT_SHIFT => .{ 0, 1, 0 },
+                        .LEFT_CONTROL => .{ 0, -1, 0 },
+                        else => comptime unreachable,
+                    } });
+                }
+            },
+            .ESCAPE => {
                 state.running = false;
                 sapp.requestQuit();
-            }
+            },
+            else => {},
         },
         else => |t| {
             std.log.debug("unhandled {s}", .{@tagName(t)});
         },
+    }
+}
+
+fn sokolCleanup(user_data: ?*anyopaque) callconv(.c) void {
+    const state: *@This() = @ptrCast(@alignCast(user_data));
+
+    if (state.world) |*world| {
+        world.deinit(state.gpa.allocator());
     }
 }
 
@@ -137,10 +196,11 @@ pub fn main() !void {
     var state: @This() = undefined;
 
     sapp.run(.{
+        .user_data = &state,
         .init_userdata_cb = &sokolInit,
         .event_userdata_cb = &sokolEvent,
-        .user_data = &state,
         .frame_userdata_cb = &sokolFrame,
+        .cleanup_userdata_cb = &sokolCleanup,
     });
 }
 
@@ -149,136 +209,162 @@ fn fail(comptime fmt: []const u8, args: anytype) noreturn {
     std.process.exit(1);
 }
 
-// pub fn runClient(gpa: std.mem.Allocator, game: *Game, ip: []const u8, port: u16) void {
-//     errdefer |e| {
-//         std.log.err("Networking thread failed with {s}", .{@errorName(e)});
-//         // std.debug.dumpStackTrace(@errorReturnTrace().?.*);
-//         std.process.exit(1);
-//     }
+pub fn networkThread(
+    gpa: std.mem.Allocator,
+    stream: std.net.Stream,
+    mutex: *Mutex,
+    world: *World,
+) void {
+    errdefer |e| {
+        std.log.err("Networking thread failed with {s}", .{@errorName(e)});
+        std.process.exit(1);
+    }
 
-//     var packet_arena = std.heap.ArenaAllocator.init(gpa);
-//     defer _ = packet_arena.deinit();
+    var packet_arena = std.heap.ArenaAllocator.init(gpa);
+    defer _ = packet_arena.deinit();
 
-//     std.log.info("Connected to server", .{});
+    std.log.info("Connected to server", .{});
 
-//     while (blk: {
-//         game.mutex.lock();
-//         defer game.mutex.unlock();
-//         break :blk game.running;
-//     }) {
-//         _ = packet_arena.reset(.retain_capacity);
-//         const packet = try Packet.read(
-//             stream.reader(),
-//             packet_arena.allocator(),
-//         );
-//         game.mutex.lock();
-//         defer game.mutex.unlock();
+    const ms = std.time.ns_per_ms;
 
-//         if (game.write_message) |message| {
-//             try Packet.write(.{ .@"Chat Message" = .{ .message = .fromUtf8(message) } }, stream.writer());
-//             game.gpa.free(message);
-//             game.write_message = null;
-//         }
+    var timers: struct {
+        send_position: Timer,
+    } = .{
+        .send_position = .start(50 * ms, true),
+    };
 
-//         switch (packet) {
-//             .@"Spawn Named Entity" => |p| {
-//                 try game.players.put(game.gpa, p.entity_id, .{
-//                     .name = try game.full_arena.allocator().dupeZ(u8, p.player_name.utf8),
-//                     .pos = .{
-//                         .x = (@as(f32, @floatFromInt(p.x))) / 32.0,
-//                         .y = (@as(f32, @floatFromInt(p.y))) / 32.0,
-//                         .z = (@as(f32, @floatFromInt(p.z))) / 32.0,
-//                     },
-//                 });
-//             },
-//             inline .@"Entity Look and Relative Move", .@"Entity Relative Move" => |p| blk: {
-//                 const player = game.players.getPtr(p.entity_id) orelse break :blk;
+    while (true) {
+        mutex.lock();
+        defer mutex.unlock();
 
-//                 player.pos.x += @as(f32, @floatFromInt(p.dx)) / 32.0;
-//                 player.pos.y += @as(f32, @floatFromInt(p.dy)) / 32.0;
-//                 player.pos.z += @as(f32, @floatFromInt(p.dz)) / 32.0;
+        inline for (@typeInfo(@TypeOf(timers)).@"struct".fields) |field| {
+            if (@field(timers, field.name).justFinished()) {
+                const timer = @field(std.meta.FieldEnum(@TypeOf(timers)), field.name);
+                switch (timer) {
+                    .send_position => {
+                        try networking.write(.{
+                            .@"Player Position" = .{
+                                .x = world.player.position[0],
+                                .y = world.player.position[1],
+                                .z = world.player.position[2],
+                                .stance = world.player.position[1] + 1.6,
+                                .on_ground = true,
+                            },
+                        }, stream.writer());
+                    },
+                }
+            }
+        }
 
-//                 // game.position[0] = @floatCast(player.pos.x);
-//                 // game.position[1] = @floatCast(player.pos.y);
-//                 // game.position[2] = @floatCast(player.pos.z);
+        const packet = try networking.read(stream.reader(), packet_arena.allocator());
+        switch (packet) {
+            // send same back
+            .@"Keep Alive" => try networking.write(packet, stream.writer()),
+            .@"Chat Message" => |chat| {
+                world.chat.send(chat.message.utf8);
+            },
+            else => {
+                std.log.debug("got packet {s}", .{@tagName(packet)});
+            },
+        }
 
-//                 std.debug.print(
-//                     "moved player {s} {any}\n",
-//                     .{ player.name, player.pos },
-//                 );
-//             },
-//             .@"Entity Teleport" => |p| blk: {
-//                 const player = game.players.getPtr(p.entity_id) orelse break :blk;
-//                 player.pos = .{
-//                     .x = (@as(f32, @floatFromInt(p.x))),
-//                     .y = (@as(f32, @floatFromInt(p.y))),
-//                     .z = (@as(f32, @floatFromInt(p.z))),
-//                 };
-//                 std.debug.print(
-//                     "moved player {s} {any}\n",
-//                     .{ player.name, player.pos },
-//                 );
-//             },
-//             .@"Keep Alive" => {
-//                 try packet.write(stream.writer());
-//             },
-//             .@"Chat Message" => |m| {
-//                 try game.messages.append(
-//                     game.full_arena.allocator(),
-//                     try game.full_arena.allocator().dupeZ(u8, m.message.utf8),
-//                 );
-//             },
-//             inline .@"Player Position", .@"Player Position and Look", .@"Player Look", .Player => |p| {
-//                 if (@hasField(@TypeOf(p), "x")) {
-//                     game.position = .{ p.x, p.y, p.z };
-//                 }
+        // switch (packet) {
+        //     .@"Spawn Named Entity" => |p| {
+        //         try game.players.put(game.gpa, p.entity_id, .{
+        //             .name = try game.full_arena.allocator().dupeZ(u8, p.player_name.utf8),
+        //             .pos = .{
+        //                 .x = (@as(f32, @floatFromInt(p.x))) / 32.0,
+        //                 .y = (@as(f32, @floatFromInt(p.y))) / 32.0,
+        //                 .z = (@as(f32, @floatFromInt(p.z))) / 32.0,
+        //             },
+        //         });
+        //     },
+        //     inline .@"Entity Look and Relative Move", .@"Entity Relative Move" => |p| blk: {
+        //         const player = game.players.getPtr(p.entity_id) orelse break :blk;
 
-//                 if (@hasField(@TypeOf(p), "yaw")) game.yaw = p.yaw;
-//                 if (@hasField(@TypeOf(p), "pitch")) game.pitch = p.pitch;
+        //         player.pos.x += @as(f32, @floatFromInt(p.dx)) / 32.0;
+        //         player.pos.y += @as(f32, @floatFromInt(p.dy)) / 32.0;
+        //         player.pos.z += @as(f32, @floatFromInt(p.dz)) / 32.0;
 
-//                 std.debug.print(
-//                     "update position {any}\n",
-//                     .{game.position},
-//                 );
-//             },
-//             .@"Map Chunk Bulk" => |mcb| {
-//                 var reader = std.io.fixedBufferStream(mcb.data);
-//                 var dcm_buf: [1000 * 1024]u8 = undefined;
-//                 var writer = std.io.fixedBufferStream(&dcm_buf);
-//                 try std.compress.zlib.decompress(reader.reader(), writer.writer());
-//                 var fbr = std.io.fixedBufferStream(&dcm_buf);
-//                 for (mcb.chunk_column) |chunk_column_meta| {
-//                     const chunk_column = try game.chunks_pool.create();
-//                     try game.chunks.put(
-//                         game.gpa,
-//                         .{
-//                             chunk_column_meta.chunk_x,
-//                             chunk_column_meta.chunk_z,
-//                         },
-//                         chunk_column,
-//                     );
-//                     try ChunkColumn.parse(
-//                         chunk_column,
-//                         fbr.reader(),
-//                         chunk_column_meta.primary_bitmap,
-//                         chunk_column_meta.add_bitmap,
-//                         mcb.sky_light_sent,
-//                         true,
-//                     );
-//                 }
-//             },
-//             else => |p| {
-//                 std.log.debug("{s}", .{@tagName(p)});
-//             },
-//         }
-//     }
-// }
+        //         // game.position[0] = @floatCast(player.pos.x);
+        //         // game.position[1] = @floatCast(player.pos.y);
+        //         // game.position[2] = @floatCast(player.pos.z);
 
-pub fn connectToServerWithHandshake(gpa: std.mem.Allocator, username: []const u8, ip: []const u8, port: u16) !World {
-    const address = try std.net.Address.parseIp4(ip, port);
-    const stream = try std.net.tcpConnectToAddress(address);
-    defer stream.close();
+        //         std.debug.print(
+        //             "moved player {s} {any}\n",
+        //             .{ player.name, player.pos },
+        //         );
+        //     },
+        //     .@"Entity Teleport" => |p| blk: {
+        //         const player = game.players.getPtr(p.entity_id) orelse break :blk;
+        //         player.pos = .{
+        //             .x = (@as(f32, @floatFromInt(p.x))),
+        //             .y = (@as(f32, @floatFromInt(p.y))),
+        //             .z = (@as(f32, @floatFromInt(p.z))),
+        //         };
+        //         std.debug.print(
+        //             "moved player {s} {any}\n",
+        //             .{ player.name, player.pos },
+        //         );
+        //     },
+        //     .@"Chat Message" => |m| {
+        //         try game.messages.append(
+        //             game.full_arena.allocator(),
+        //             try game.full_arena.allocator().dupeZ(u8, m.message.utf8),
+        //         );
+        //     },
+        //     inline .@"Player Position", .@"Player Position and Look", .@"Player Look", .Player => |p| {
+        //         if (@hasField(@TypeOf(p), "x")) {
+        //             game.position = .{ p.x, p.y, p.z };
+        //         }
 
+        //         if (@hasField(@TypeOf(p), "yaw")) game.yaw = p.yaw;
+        //         if (@hasField(@TypeOf(p), "pitch")) game.pitch = p.pitch;
+
+        //         std.debug.print(
+        //             "update position {any}\n",
+        //             .{game.position},
+        //         );
+        //     },
+        //     .@"Map Chunk Bulk" => |mcb| {
+        //         var reader = std.io.fixedBufferStream(mcb.data);
+        //         var dcm_buf: [1000 * 1024]u8 = undefined;
+        //         var writer = std.io.fixedBufferStream(&dcm_buf);
+        //         try std.compress.zlib.decompress(reader.reader(), writer.writer());
+        //         var fbr = std.io.fixedBufferStream(&dcm_buf);
+        //         for (mcb.chunk_column) |chunk_column_meta| {
+        //             const chunk_column = try game.chunks_pool.create();
+        //             try game.chunks.put(
+        //                 game.gpa,
+        //                 .{
+        //                     chunk_column_meta.chunk_x,
+        //                     chunk_column_meta.chunk_z,
+        //                 },
+        //                 chunk_column,
+        //             );
+        //             try ChunkColumn.parse(
+        //                 chunk_column,
+        //                 fbr.reader(),
+        //                 chunk_column_meta.primary_bitmap,
+        //                 chunk_column_meta.add_bitmap,
+        //                 mcb.sky_light_sent,
+        //                 true,
+        //             );
+        //         }
+        //     },
+        //     else => |p| {
+        //         std.log.debug("{s}", .{@tagName(p)});
+        //     },
+    }
+}
+
+pub fn worldHandshake(
+    gpa: std.mem.Allocator,
+    stream: std.net.Stream,
+    username: []const u8,
+    ip: []const u8,
+    port: u16,
+) !World {
     var connect_arena = std.heap.ArenaAllocator.init(gpa);
     defer connect_arena.deinit();
 
