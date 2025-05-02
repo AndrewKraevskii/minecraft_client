@@ -5,15 +5,15 @@ chunks: [16]?Chunk,
 biome: ?[16][16]u8,
 
 const Chunk = struct {
-    // starting from 0
-    //           Y,  Z,  X
+    /// starting from 0
+    ///           Y,  Z,  X
     block_type: [16][16][16]u8,
     block_meta: DataNibble,
     block_light: DataNibble,
     sky_light: ?DataNibble,
     add_array: DataNibble,
 
-    // TODO: i remeber there was packed array type
+    /// TODO: i remeber there was packed array type
     const DataNibble = [16][16][8]packed struct {
         @"0": u4,
         @"1": u4,

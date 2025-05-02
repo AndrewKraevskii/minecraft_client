@@ -141,7 +141,7 @@ pub const Packet = union(PacketId) {
     @"Login Request": struct {
         player_id: i32,
         level_type: String,
-        // TODO: Bit 3 (0x8) is the hardcore flag
+        /// TODO: Bit 3 (0x8) is the hardcore flag
         game_mode: enum(u8) {
             survival = 0,
             creative = 1,
@@ -624,7 +624,8 @@ pub const Packet = union(PacketId) {
     @"Player List Item": struct {
         player_name: String,
         online: bool,
-        ping: i16, // ms,
+        /// in ms
+        ping: i16,
     },
     @"Player Abilities": struct {
         flags: packed struct {
@@ -760,7 +761,6 @@ pub fn read(reader: anytype, arena: std.mem.Allocator) !Packet {
                     String => {
                         @field(result, field.name) = .fromUtf8(try readString(reader, arena));
                         log.debug("read string {s}", .{@field(result, field.name).utf8});
-                        // }
                     },
                     []const String => {
                         const len = @field(result, std.mem.trimLeft(u8, field.name, "_") ++ "_len");

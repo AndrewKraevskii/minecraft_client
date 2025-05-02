@@ -28,6 +28,7 @@ time: struct {
 },
 
 pub const Chunk = struct {
+    ///          Y     Z     X
     block_type: [size][size][size]u8,
 
     pub const size = 16;
@@ -205,4 +206,12 @@ pub fn deinit(world: *World, gpa: Allocator) void {
     world.chunks.deinit(gpa);
     world.players.deinit(gpa);
     world.chat.messages.deinit(gpa);
+}
+
+test "Physics" {
+    var world = try init(std.testing.allocator, "Andrew", .{ 0, 0, 0 });
+
+    for (0..100) |_| {
+        world.tick(&.{}, 100);
+    }
 }

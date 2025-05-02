@@ -489,16 +489,6 @@ pub fn networkThread(
         }
 
         // switch (packet) {
-        //     .@"Spawn Named Entity" => |p| {
-        //         try game.players.put(game.gpa, p.entity_id, .{
-        //             .name = try game.full_arena.allocator().dupeZ(u8, p.player_name.utf8),
-        //             .pos = .{
-        //                 .x = (@as(f32, @floatFromInt(p.x))) / 32.0,
-        //                 .y = (@as(f32, @floatFromInt(p.y))) / 32.0,
-        //                 .z = (@as(f32, @floatFromInt(p.z))) / 32.0,
-        //             },
-        //         });
-        //     },
         //     inline .@"Entity Look and Relative Move", .@"Entity Relative Move" => |p| blk: {
         //         const player = game.players.getPtr(p.entity_id) orelse break :blk;
 
@@ -527,12 +517,6 @@ pub fn networkThread(
         //             .{ player.name, player.pos },
         //         );
         //     },
-        //     .@"Chat Message" => |m| {
-        //         try game.messages.append(
-        //             game.full_arena.allocator(),
-        //             try game.full_arena.allocator().dupeZ(u8, m.message.utf8),
-        //         );
-        //     },
         //     inline .@"Player Position", .@"Player Position and Look", .@"Player Look", .Player => |p| {
         //         if (@hasField(@TypeOf(p), "x")) {
         //             game.position = .{ p.x, p.y, p.z };
@@ -545,35 +529,6 @@ pub fn networkThread(
         //             "update position {any}\n",
         //             .{game.position},
         //         );
-        //     },
-        //     .@"Map Chunk Bulk" => |mcb| {
-        //         var reader = std.io.fixedBufferStream(mcb.data);
-        //         var dcm_buf: [1000 * 1024]u8 = undefined;
-        //         var writer = std.io.fixedBufferStream(&dcm_buf);
-        //         try std.compress.zlib.decompress(reader.reader(), writer.writer());
-        //         var fbr = std.io.fixedBufferStream(&dcm_buf);
-        //         for (mcb.chunk_column) |chunk_column_meta| {
-        //             const chunk_column = try game.chunks_pool.create();
-        //             try game.chunks.put(
-        //                 game.gpa,
-        //                 .{
-        //                     chunk_column_meta.chunk_x,
-        //                     chunk_column_meta.chunk_z,
-        //                 },
-        //                 chunk_column,
-        //             );
-        //             try ChunkColumn.parse(
-        //                 chunk_column,
-        //                 fbr.reader(),
-        //                 chunk_column_meta.primary_bitmap,
-        //                 chunk_column_meta.add_bitmap,
-        //                 mcb.sky_light_sent,
-        //                 true,
-        //             );
-        //         }
-        //     },
-        //     else => |p| {
-        //         std.log.debug("{s}", .{@tagName(p)});
         //     },
     }
 }

@@ -1,5 +1,5 @@
 timer: std.time.Timer,
-/// ns
+/// duration in ns
 len: u64,
 loop: bool,
 
