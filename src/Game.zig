@@ -89,8 +89,8 @@ fn sokolInit(user_data: ?*anyopaque) callconv(.c) void {
 
 const UiImgui = struct {
     user_name: [100:0]u8 = ("andrew" ++ "\x00" ** (100 - 6)).*,
-    ip_buffer: ["255.255.255.255".len:0]u8 = ("144.76.153.125" ++ "\x00").*,
-    port: u16 = 25633,
+    ip_buffer: ["255.255.255.255".len:0]u8 = ("31.56.39.199" ++ "\x00\x00\x00").*,
+    port: u16 = 25565,
 
     send_message: [100:0]u8 = @splat(0),
 
