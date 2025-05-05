@@ -13,7 +13,7 @@ const Chunk = struct {
     sky_light: ?DataNibble,
     add_array: DataNibble,
 
-    /// TODO: i remeber there was packed array type
+    /// TODO: i remember there was packed array type
     const DataNibble = [16][16][8]packed struct {
         @"0": u4,
         @"1": u4,
@@ -29,7 +29,7 @@ pub fn parse(
     primary_mask: u16,
     add_mask: u16,
     skylight: bool,
-    ground_up_continious: bool,
+    ground_up_continuous: bool,
 ) !ChunkColumn {
     var chunk_column: ChunkColumn = undefined;
     try parseSection(&chunk_column, stream, "block_type", primary_mask);
@@ -39,7 +39,7 @@ pub fn parse(
         try parseSection(&chunk_column, stream, "sky_light", primary_mask);
     }
     try parseSection(&chunk_column, stream, "add_array", add_mask);
-    if (ground_up_continious) {
+    if (ground_up_continuous) {
         chunk_column.biome = @bitCast(try stream.readBytesNoEof(256));
     } else {
         chunk_column.biome = null;

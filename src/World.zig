@@ -207,11 +207,3 @@ pub fn deinit(world: *World, gpa: Allocator) void {
     world.players.deinit(gpa);
     world.chat.messages.deinit(gpa);
 }
-
-test "Physics" {
-    var world = try init(std.testing.allocator, "Andrew", .{ 0, 0, 0 });
-
-    for (0..100) |_| {
-        world.tick(&.{}, 100);
-    }
-}

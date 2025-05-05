@@ -295,7 +295,7 @@ pub const Packet = union(Id) {
         dimension: i32,
         difficulty: u8,
         game_mode: u8,
-        world_heigth: i16,
+        world_height: i16,
         level_type: String,
     },
     Player: struct {
@@ -450,8 +450,8 @@ pub const Packet = union(Id) {
         velocity_z: i16,
     },
     @"Destroy Entity": struct {
-        entitys_len: u8,
-        entitys: []const extern struct { id: i32 },
+        entities_len: u8,
+        entities: []const extern struct { id: i32 },
     },
     /// Entity did nothing
     Entity: struct {
@@ -547,11 +547,11 @@ pub const Packet = union(Id) {
         data: []const packed struct {
             block_metadata: u4,
             block_id: u12,
-            y_coodrinate: u8,
+            y_coordinate: u8,
             /// relative to chunk
-            z_coodrinate: u4,
+            z_coordinate: u4,
             /// relative to chunk
-            x_coodrinate: u4,
+            x_coordinate: u4,
         },
     },
     @"Block Change": struct {
