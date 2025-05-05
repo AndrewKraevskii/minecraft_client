@@ -258,12 +258,24 @@ fn renderChat(chat: *World.Chat, ui: *UiImgui) void {
             .z = 1,
             .w = 1,
         };
-        const color = switch (message.origin) {
-            .client => red,
-            .server => white,
+        const color: ig.ImVec4, const skip: usize = color: {
+            if (message.bytes.slice().len >= 3) {
+                if (@import("ChatColor.zig").parse(buffer[1..][0..2].*)) |color| {
+                    break :color .{ .{
+                        .x = @as(f32, @floatFromInt(color[0])) / 255,
+                        .y = @as(f32, @floatFromInt(color[1])) / 255,
+                        .z = @as(f32, @floatFromInt(color[2])) / 255,
+                        .w = 1,
+                    }, 3 };
+                }
+            }
+            break :color .{ switch (message.origin) {
+                .client => red,
+                .server => white,
+            }, 0 };
         };
 
-        ig.igTextColored(color, "%s", buffer[0..message.bytes.slice().len :0].ptr);
+        ig.igTextColored(color, "%s", buffer[skip..message.bytes.slice().len :0].ptr);
     }
 
     _ = ig.igInputText("Input", &ui.send_message, ui.send_message.len, 0);
