@@ -59,7 +59,7 @@ const Player = struct {
     const eye_height = 1.62;
     const eneaking_eye_height = 1.27;
 
-    const ground_acceleration = 0.1;
+    const ground_acceleration = 100;
     const bounds_acceleration = 0.5;
     const air_acceleration = 0.02;
 
@@ -159,10 +159,14 @@ pub fn init(
     return world;
 }
 
-pub fn player(world: *World) *Player {
+pub fn playerPtr(world: *World) *Player {
     std.debug.assert(world.players.getIndex(world.player_id) == 0);
 
     return &world.players.values()[0];
+}
+
+pub fn player(world: *const World) Player {
+    return @constCast(world).playerPtr().*;
 }
 
 /// Processe one tick of game
@@ -177,17 +181,17 @@ pub fn tick(
                 std.log.err("got event {s}", .{@tagName(event)});
             },
             .player_move => |m| {
-                world.player().velocity[0] += m[0] * delta_t * Player.ground_acceleration;
-                world.player().velocity[1] += m[1] * delta_t * Player.ground_acceleration;
-                world.player().velocity[2] += m[2] * delta_t * Player.ground_acceleration;
+                world.playerPtr().position[0] += m[0] * delta_t * Player.ground_acceleration;
+                world.playerPtr().position[1] += m[1] * delta_t * Player.ground_acceleration;
+                world.playerPtr().position[2] += m[2] * delta_t * Player.ground_acceleration;
             },
             .player_look_absolute => |l| {
-                world.player().pitch = l.pitch;
-                world.player().yaw = l.yaw;
+                world.playerPtr().pitch = l.pitch;
+                world.playerPtr().yaw = l.yaw;
             },
             .player_look_relative => |l| {
-                world.player().pitch += l.pitch;
-                world.player().yaw += l.yaw;
+                world.playerPtr().pitch += l.pitch;
+                world.playerPtr().yaw += l.yaw;
             },
         }
     }
@@ -195,7 +199,7 @@ pub fn tick(
 
 pub fn loadChunk(world: *World, position: Chunk.Pos, chunk: Chunk) void {
     world.chunks.putAssumeCapacity(position, chunk);
-    log.debug("Loaded chunk total: {d}", .{world.chunks.count()});
+    // log.debug("Loaded chunk total: {d}", .{world.chunks.count()});
 }
 
 pub fn unloadChunk(world: *World, position: Chunk.Pos) void {

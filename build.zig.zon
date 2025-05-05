@@ -5,7 +5,7 @@
     .minimum_zig_version = "0.14.0",
     .dependencies = .{
         .sokol = .{
-            .url = "git+https://github.com/floooh/sokol-zig.git#01bde5a6cf5d934948a1c6e60483e4ab75524891",
+            .url = "git+https://github.com/floooh/sokol-zig#01bde5a6cf5d934948a1c6e60483e4ab75524891",
             .hash = "sokol-0.1.0-pb1HK2CJLADmYmRGXRmmpsf17gPLJ0MLAT06psMvPK5f",
         },
         .imgui = .{
@@ -15,6 +15,9 @@
         .sokol_2d = .{
             .url = "git+https://github.com/AndrewKraevskii/sokol_2d/#e7894c617f6bce00b052b1f6cc61ddf740e84de1",
             .hash = "sokol_2d-0.0.0-4uM6qQ-zAADdFX-KplnPkGJ6lCn_B-TiPynkrWXbNCwM",
+        },
+        .geo_math = .{
+            .path = "../geo_math",
         },
     },
     .paths = .{

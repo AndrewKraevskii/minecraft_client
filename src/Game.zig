@@ -3,23 +3,25 @@ const Mutex = std.Thread.Mutex;
 
 const ig = @import("imgui");
 const sokol = @import("sokol");
-const Sokol2d = @import("sokol_2d");
 const sg = sokol.gfx;
 const sapp = sokol.app;
 const sglue = sokol.glue;
 const slog = sokol.log;
 const simgui = sokol.imgui;
+const Sokol2d = @import("sokol_2d");
 
 const ChunkColumn = @import("ChunkColumn.zig");
 const networking = @import("minecraft_protocol.zig");
 const Packet = networking.Packet;
+const Renderer = @import("Renderer.zig");
 const Timer = @import("Timer.zig");
 const World = @import("World.zig");
+const Input = @import("Input.zig");
 
 pub const std_options: std.Options = .{
     .log_scope_levels = &.{
         .{
-            .scope = .minecraft_network,
+            .scope = .minecraft_protocol,
             .level = .err,
         },
     },
@@ -35,14 +37,19 @@ network_thread: std.Thread,
 
 running: bool,
 
-graphics: struct {
-    clear_action: sg.PassAction,
-    load_action: sg.PassAction,
-    sokol_2d: Sokol2d,
-},
+graphics: Graphics,
+renderer: Renderer,
 
 ui_imgui: UiImgui,
 events: Events,
+
+input: Input,
+
+const Graphics = struct {
+    clear_action: sg.PassAction,
+    load_action: sg.PassAction,
+    sokol_2d: Sokol2d,
+};
 
 const Events = std.ArrayListUnmanaged(World.Event);
 
@@ -65,6 +72,7 @@ fn sokolInit(user_data: ?*anyopaque) callconv(.c) void {
     const sokol2d = Sokol2d.init(gpa.allocator()) catch @panic("OOM");
 
     state.* = .{
+        .input = .init,
         .network_thread = undefined,
         .running = true,
         .graphics = .{
@@ -72,6 +80,7 @@ fn sokolInit(user_data: ?*anyopaque) callconv(.c) void {
             .clear_action = .{},
             .load_action = .{},
         },
+        .renderer = try .init(),
         .gpa = gpa,
         .ui_imgui = .init,
         .world_mutex = .{},
@@ -105,73 +114,44 @@ fn update(state: *@This()) void {
 }
 
 fn sokolFrame(user_data: ?*anyopaque) callconv(.c) void {
-    const width: f32 = sokol.app.widthf();
-    const height: f32 = sokol.app.heightf();
-
     const state: *@This() = @ptrCast(@alignCast(user_data));
+    defer state.input.newFrame();
 
     state.world_mutex.lock();
     defer state.world_mutex.unlock();
 
+    state.events.append(state.gpa.allocator(), .{
+        .player_look_relative = .{
+            .yaw = state.input.mouse_delta[0] / 100,
+            .pitch = state.input.mouse_delta[1] / 100,
+        },
+    }) catch @panic("OOM");
+
+    inline for ([_]Input.Keycode{ .W, .A, .S, .D, .LEFT_SHIFT, .LEFT_CONTROL }) |key| {
+        if (state.input.isKeyDown(key)) {
+            state.events.append(state.gpa.allocator(), .{
+                .player_move = switch (key) {
+                    .W => .{ 0, 0, 1 },
+                    .A => .{ 1, 0, 0 },
+                    .S => .{ 0, 0, -1 },
+                    .D => .{ -1, 0, 0 },
+                    .LEFT_SHIFT => .{ 0, -1, 0 },
+                    .LEFT_CONTROL => .{ 0, 1, 0 },
+                    else => comptime unreachable,
+                },
+            }) catch @panic("OOM");
+        }
+    }
+
     state.update();
 
     if (state.world) |*world| {
-        state.graphics.sokol_2d.begin(.{
-            .viewport = .{
-                .start = .zero,
-                .end = .{
-                    .x = width,
-                    .y = height,
-                },
-            },
-            .coordinates = .{
-                .start = .{
-                    .x = -width / 2,
-                    .y = -height / 2,
-                },
-                .end = .{
-                    .x = width / 2,
-                    .y = height / 2,
-                },
-            },
-        });
-
-        const spawn_x, _, const spawn_z = world.player().position;
-        state.graphics.sokol_2d.drawRect(
-            .fromCenterSize(.{ .x = 0, .y = 0 }, .{
-                .x = World.render_distance * World.Chunk.size,
-                .y = World.render_distance * World.Chunk.size,
-            }),
-            .gray,
-        );
-
-        for (world.chunks.keys()) |pos| {
-            const x: f32 = @floatFromInt(pos.x);
-            const y: f32 = @floatFromInt(pos.z);
-            const square_size = 10;
-
-            state.graphics.sokol_2d.drawRect(
-                .fromCenterSize(
-                    .{
-                        .x = (x - spawn_x / World.Chunk.size) * square_size,
-                        .y = (y - spawn_z / World.Chunk.size) * square_size,
-                    },
-                    .{ .x = square_size, .y = square_size },
-                ),
-                .white,
-            );
+        if (world.chunks.count() > World.chunks_height * 8 * 8) {
+            clearScreen(&state.graphics);
+            state.renderer.renderWorld(world, state.graphics.load_action);
+        } else {
+            drawLoadingScreen(&state.graphics, world);
         }
-
-        {
-            sokol.gfx.beginPass(.{
-                .action = state.graphics.clear_action,
-                .swapchain = sokol.glue.swapchain(),
-            });
-            defer sokol.gfx.endPass();
-
-            state.graphics.sokol_2d.flush();
-        }
-        sokol.gfx.commit();
     }
 
     { //=== UI CODE STARTS HERE
@@ -228,6 +208,77 @@ fn sokolFrame(user_data: ?*anyopaque) callconv(.c) void {
         sg.endPass();
         sg.commit();
     } //=== UI CODE ENDS HERE
+}
+
+fn drawLoadingScreen(graphics: *Graphics, world: *const World) void {
+    const width: f32 = sokol.app.widthf();
+    const height: f32 = sokol.app.heightf();
+
+    graphics.sokol_2d.begin(.{
+        .viewport = .{
+            .start = .zero,
+            .end = .{
+                .x = width,
+                .y = height,
+            },
+        },
+        .coordinates = .{
+            .start = .{
+                .x = -width / 2,
+                .y = -height / 2,
+            },
+            .end = .{
+                .x = width / 2,
+                .y = height / 2,
+            },
+        },
+    });
+
+    const spawn_x, _, const spawn_z = world.player().position;
+    graphics.sokol_2d.drawRect(
+        .fromCenterSize(.{ .x = 0, .y = 0 }, .{
+            .x = World.render_distance * World.Chunk.size,
+            .y = World.render_distance * World.Chunk.size,
+        }),
+        .gray,
+    );
+
+    for (world.chunks.keys()) |pos| {
+        const x: f32 = @floatFromInt(pos.x);
+        const y: f32 = @floatFromInt(pos.z);
+        const square_size = 10;
+
+        graphics.sokol_2d.drawRect(
+            .fromCenterSize(
+                .{
+                    .x = (x - spawn_x / World.Chunk.size) * square_size,
+                    .y = (y - spawn_z / World.Chunk.size) * square_size,
+                },
+                .{ .x = square_size, .y = square_size },
+            ),
+            .white,
+        );
+    }
+
+    {
+        sokol.gfx.beginPass(.{
+            .action = graphics.clear_action,
+            .swapchain = sokol.glue.swapchain(),
+        });
+        defer sokol.gfx.endPass();
+
+        graphics.sokol_2d.flush();
+    }
+    sokol.gfx.commit();
+}
+
+fn clearScreen(graphics: *Graphics) void {
+    sokol.gfx.beginPass(.{
+        .action = graphics.clear_action,
+        .swapchain = sokol.glue.swapchain(),
+    });
+    sokol.gfx.endPass();
+    sokol.gfx.commit();
 }
 
 fn renderChat(chat: *World.Chat, ui: *UiImgui) void {
@@ -290,25 +341,14 @@ fn sokolEvent(ev: [*c]const sapp.Event, user_data: ?*anyopaque) callconv(.c) voi
     const event = ev.?.*;
     if (simgui.handleEvent(event)) return;
 
+    state.input.consumeEvent(ev.?);
+
     state.world_mutex.lock();
     defer state.world_mutex.unlock();
 
     switch (event.type) {
         .MOUSE_MOVE => {},
         .KEY_DOWN => switch (event.key_code) {
-            inline .W, .A, .S, .D, .LEFT_SHIFT, .LEFT_CONTROL => |key| {
-                if (state.world != null) {
-                    state.events.append(state.gpa.allocator(), .{ .player_move = switch (key) {
-                        .W => .{ 1, 0, 0 },
-                        .A => .{ 0, -1, 0 },
-                        .S => .{ -1, 0, 0 },
-                        .D => .{ 0, 1, 0 },
-                        .LEFT_SHIFT => .{ 0, 1, 0 },
-                        .LEFT_CONTROL => .{ 0, -1, 0 },
-                        else => comptime unreachable,
-                    } }) catch @panic("OOM");
-                }
-            },
             .ESCAPE => {
                 state.running = false;
                 sapp.requestQuit();
