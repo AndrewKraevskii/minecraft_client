@@ -409,7 +409,7 @@ pub fn networkThread(
         const packet = try networking.read(stream.reader(), packet_arena.allocator());
         switch (packet) {
             // send same back
-            .@"Keep Alive" => try networking.write(packet, stream.writer()),
+            .@"Keep Alive" => try networking.write(networking.changeDirection(packet), stream.writer()),
             .@"Chat Message" => |chat| {
                 mutex.lock();
                 defer mutex.unlock();

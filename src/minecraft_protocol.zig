@@ -1,90 +1,6 @@
 const std = @import("std");
 
-const log = std.log.scoped(.minecraft_network);
-
-pub const PacketId = enum(u8) {
-    // zig fmt: off
-    @"Keep Alive"                    = 0x00,
-    @"Login Request"                 = 0x01,
-    Handshake                        = 0x02,
-    @"Chat Message"                  = 0x03,
-    @"Time Update"                   = 0x04,
-    @"Entity Equipment"              = 0x05,
-    @"Spawn Position"                = 0x06,
-    @"Use Entity"                    = 0x07,
-    @"Update Health"                 = 0x08,
-    Respawn                          = 0x09,
-    Player                           = 0x0A,
-    @"Player Position"               = 0x0B,
-    @"Player Look"                   = 0x0C,
-    @"Player Position and Look"      = 0x0D,
-    @"Player Digging"                = 0x0E,
-    @"Player Block Placement"        = 0x0F,
-    @"Held Item Change"              = 0x10,
-    @"Use Bed"                       = 0x11,
-    Animation                        = 0x12,
-    @"Entity Action"                 = 0x13,
-    @"Spawn Named Entity"            = 0x14,
-    @"Collect Item"                  = 0x16,
-    @"Spawn Object/Vehicle"          = 0x17,
-    @"Spawn Mob"                     = 0x18,
-    @"Spawn Painting"                = 0x19,
-    @"Spawn Experience Orb"          = 0x1A,
-    @"Entity Velocity"               = 0x1C,
-    @"Destroy Entity"                = 0x1D,
-    Entity                           = 0x1E,
-    @"Entity Relative Move"          = 0x1F,
-    @"Entity Look"                   = 0x20,
-    @"Entity Look and Relative Move" = 0x21,
-    @"Entity Teleport"               = 0x22,
-    @"Entity Head Look"              = 0x23,
-    @"Entity Status"                 = 0x26,
-    @"Attach Entity"                 = 0x27,
-    @"Entity Metadata"               = 0x28,
-    @"Entity Effect"                 = 0x29,
-    @"Remove Entity Effect"          = 0x2A,
-    @"Set Experience"                = 0x2B,
-    @"Chunk Data"                    = 0x33,
-    @"Multi Block Change"            = 0x34,
-    @"Block Change"                  = 0x35,
-    @"Block Action"                  = 0x36,
-    @"Block Break Animation"         = 0x37,
-    @"Map Chunk Bulk"                = 0x38,
-    Explosion                        = 0x3C,
-    @"Sound Or Particle Effect"      = 0x3D,
-    @"Named Sound Effect"            = 0x3E,
-    Particle                         = 0x3F,
-    @"Change Game State"             = 0x46,
-    @"Spawn Global Entity"           = 0x47,
-    @"Open Window"                   = 0x64,
-    @"Close Window"                  = 0x65,
-    @"Click Window"                  = 0x66,
-    @"Set Slot"                      = 0x67,
-    @"Set Window Items"              = 0x68,
-    @"Update Window Property"        = 0x69,
-    @"Confirm Transaction"           = 0x6A,
-    @"Creative Inventory Action"     = 0x6B,
-    @"Enchant Item"                  = 0x6C,
-    @"Update Sign"                   = 0x82,
-    @"Item Data"                     = 0x83,
-    @"Update Tile Entity"            = 0x84,
-    @"Increment Statistic"           = 0xC8,
-    @"Player List Item"              = 0xC9,
-    @"Player Abilities"              = 0xCA,
-    @"Tab-complete"                  = 0xCB,
-    @"Client Settings"               = 0xCC,
-    @"Client Statuses"               = 0xCD,
-    @"Scoreboard Objective"          = 0xCE,
-    @"Update Score"                  = 0xCF,
-    @"Display Scoreboard"            = 0xD0,
-    Teams                            = 0xD1,
-    @"Plugin Message"                = 0xFA,
-    @"Encryption Key Response"       = 0xFC,
-    @"Encryption Key Request"        = 0xFD,
-    @"Server List Ping"              = 0xFE,
-    @"Disconnect/Kick"               = 0xFF,
-    // zig fmt: on
-};
+const log = std.log.scoped(.minecraft_protocol);
 
 const String = struct {
     utf8: []const u8,
@@ -134,7 +50,188 @@ const Slot = struct {
     }
 };
 
-pub const Packet = union(PacketId) {
+pub const Packet = union(Id) {
+    pub const Id = enum(u8) {
+        // zig fmt: off
+        @"Keep Alive"                    = 0x00,
+        @"Login Request"                 = 0x01,
+        Handshake                        = 0x02,
+        @"Chat Message"                  = 0x03,
+        @"Time Update"                   = 0x04,
+        @"Entity Equipment"              = 0x05,
+        @"Spawn Position"                = 0x06,
+        @"Use Entity"                    = 0x07,
+        @"Update Health"                 = 0x08,
+        Respawn                          = 0x09,
+        Player                           = 0x0A,
+        @"Player Position"               = 0x0B,
+        @"Player Look"                   = 0x0C,
+        @"Player Position and Look"      = 0x0D,
+        @"Player Digging"                = 0x0E,
+        @"Player Block Placement"        = 0x0F,
+        @"Held Item Change"              = 0x10,
+        @"Use Bed"                       = 0x11,
+        Animation                        = 0x12,
+        @"Entity Action"                 = 0x13,
+        @"Spawn Named Entity"            = 0x14,
+        @"Collect Item"                  = 0x16,
+        @"Spawn Object/Vehicle"          = 0x17,
+        @"Spawn Mob"                     = 0x18,
+        @"Spawn Painting"                = 0x19,
+        @"Spawn Experience Orb"          = 0x1A,
+        @"Entity Velocity"               = 0x1C,
+        @"Destroy Entity"                = 0x1D,
+        Entity                           = 0x1E,
+        @"Entity Relative Move"          = 0x1F,
+        @"Entity Look"                   = 0x20,
+        @"Entity Look and Relative Move" = 0x21,
+        @"Entity Teleport"               = 0x22,
+        @"Entity Head Look"              = 0x23,
+        @"Entity Status"                 = 0x26,
+        @"Attach Entity"                 = 0x27,
+        @"Entity Metadata"               = 0x28,
+        @"Entity Effect"                 = 0x29,
+        @"Remove Entity Effect"          = 0x2A,
+        @"Set Experience"                = 0x2B,
+        @"Chunk Data"                    = 0x33,
+        @"Multi Block Change"            = 0x34,
+        @"Block Change"                  = 0x35,
+        @"Block Action"                  = 0x36,
+        @"Block Break Animation"         = 0x37,
+        @"Map Chunk Bulk"                = 0x38,
+        Explosion                        = 0x3C,
+        @"Sound Or Particle Effect"      = 0x3D,
+        @"Named Sound Effect"            = 0x3E,
+        Particle                         = 0x3F,
+        @"Change Game State"             = 0x46,
+        @"Spawn Global Entity"           = 0x47,
+        @"Open Window"                   = 0x64,
+        @"Close Window"                  = 0x65,
+        @"Click Window"                  = 0x66,
+        @"Set Slot"                      = 0x67,
+        @"Set Window Items"              = 0x68,
+        @"Update Window Property"        = 0x69,
+        @"Confirm Transaction"           = 0x6A,
+        @"Creative Inventory Action"     = 0x6B,
+        @"Enchant Item"                  = 0x6C,
+        @"Update Sign"                   = 0x82,
+        @"Item Data"                     = 0x83,
+        @"Update Tile Entity"            = 0x84,
+        @"Increment Statistic"           = 0xC8,
+        @"Player List Item"              = 0xC9,
+        @"Player Abilities"              = 0xCA,
+        @"Tab-complete"                  = 0xCB,
+        @"Client Settings"               = 0xCC,
+        @"Client Statuses"               = 0xCD,
+        @"Scoreboard Objective"          = 0xCE,
+        @"Update Score"                  = 0xCF,
+        @"Display Scoreboard"            = 0xD0,
+        Teams                            = 0xD1,
+        @"Plugin Message"                = 0xFA,
+        @"Encryption Key Response"       = 0xFC,
+        @"Encryption Key Request"        = 0xFD,
+        @"Server List Ping"              = 0xFE,
+        @"Disconnect/Kick"               = 0xFF,
+        // zig fmt: on
+
+        pub const Direction = enum {
+            server_to_client,
+            client_to_server,
+        };
+
+        pub fn supportsDirection(id: Id, direction: Direction) bool {
+            const supported_direction: enum {
+                two_way,
+                server_to_client,
+                client_to_server,
+            } = switch (id) {
+                .@"Keep Alive" => .two_way,
+                .@"Login Request" => .server_to_client,
+                .Handshake => .client_to_server,
+                .@"Chat Message" => .two_way,
+                .@"Time Update" => .server_to_client,
+                .@"Entity Equipment" => .server_to_client,
+                .@"Spawn Position" => .server_to_client,
+                .@"Use Entity" => .client_to_server,
+                .@"Update Health" => .server_to_client,
+                .Respawn => .server_to_client,
+                .Player => .client_to_server,
+                .@"Player Position" => .client_to_server,
+                .@"Player Look" => .client_to_server,
+                .@"Player Position and Look" => .two_way,
+                .@"Player Digging" => .client_to_server,
+                .@"Player Block Placement" => .client_to_server,
+                .@"Held Item Change" => .two_way,
+                .@"Use Bed" => .server_to_client,
+                .Animation => .two_way,
+                .@"Entity Action" => .client_to_server,
+                .@"Spawn Named Entity" => .server_to_client,
+                .@"Collect Item" => .server_to_client,
+                .@"Spawn Object/Vehicle" => .server_to_client,
+                .@"Spawn Mob" => .server_to_client,
+                .@"Spawn Painting" => .server_to_client,
+                .@"Spawn Experience Orb" => .server_to_client,
+                .@"Entity Velocity" => .server_to_client,
+                .@"Destroy Entity" => .server_to_client,
+                .Entity => .server_to_client,
+                .@"Entity Relative Move" => .server_to_client,
+                .@"Entity Look" => .server_to_client,
+                .@"Entity Look and Relative Move" => .server_to_client,
+                .@"Entity Teleport" => .server_to_client,
+                .@"Entity Head Look" => .server_to_client,
+                .@"Entity Status" => .server_to_client,
+                .@"Attach Entity" => .server_to_client,
+                .@"Entity Metadata" => .server_to_client,
+                .@"Entity Effect" => .server_to_client,
+                .@"Remove Entity Effect" => .server_to_client,
+                .@"Set Experience" => .server_to_client,
+                .@"Chunk Data" => .server_to_client,
+                .@"Multi Block Change" => .server_to_client,
+                .@"Block Change" => .server_to_client,
+                .@"Block Action" => .server_to_client,
+                .@"Block Break Animation" => .server_to_client,
+                .@"Map Chunk Bulk" => .server_to_client,
+                .Explosion => .server_to_client,
+                .@"Sound Or Particle Effect" => .server_to_client,
+                .@"Named Sound Effect" => .server_to_client,
+                .Particle => .server_to_client,
+                .@"Change Game State" => .server_to_client,
+                .@"Spawn Global Entity" => .server_to_client,
+                .@"Open Window" => .server_to_client,
+                .@"Close Window" => .client_to_server,
+                .@"Click Window" => .client_to_server,
+                .@"Set Slot" => .server_to_client,
+                .@"Set Window Items" => .server_to_client,
+                .@"Update Window Property" => .server_to_client,
+                .@"Confirm Transaction" => .two_way,
+                .@"Creative Inventory Action" => .two_way,
+                .@"Enchant Item" => .client_to_server,
+                .@"Update Sign" => .two_way,
+                .@"Item Data" => .server_to_client,
+                .@"Update Tile Entity" => .server_to_client,
+                .@"Increment Statistic" => .server_to_client,
+                .@"Player List Item" => .server_to_client,
+                .@"Player Abilities" => .two_way,
+                .@"Tab-complete" => .two_way,
+                .@"Client Settings" => .client_to_server,
+                .@"Client Statuses" => .client_to_server,
+                .@"Scoreboard Objective" => .server_to_client,
+                .@"Update Score" => .server_to_client,
+                .@"Display Scoreboard" => .server_to_client,
+                .Teams => .server_to_client,
+                .@"Plugin Message" => .two_way,
+                .@"Encryption Key Response" => .two_way,
+                .@"Encryption Key Request" => .server_to_client,
+                .@"Server List Ping" => .server_to_client,
+                .@"Disconnect/Kick" => .two_way,
+            };
+            return switch (supported_direction) {
+                .two_way => true,
+                inline else => |dir| @field(Direction, @tagName(dir)) == direction,
+            };
+        }
+    };
+
     @"Keep Alive": struct {
         id: i32,
     },
@@ -713,17 +810,108 @@ pub const Packet = union(PacketId) {
     },
 };
 
-pub fn read(reader: anytype, arena: std.mem.Allocator) !Packet {
-    @setEvalBranchQuota(2000);
+pub fn ScopedPacketId(comptime scope: Packet.Id.Direction) type {
+    const all_fields = @typeInfo(Packet.Id).@"enum".fields;
 
-    const int = try reader.readInt(@typeInfo(PacketId).@"enum".tag_type, .big);
-    const packet_id = std.meta.intToEnum(PacketId, int) catch {
+    // Find all fields that are scoped to s
+    var i: usize = 0;
+    var fields: [all_fields.len]std.builtin.Type.EnumField = undefined;
+
+    for (all_fields) |field| {
+        const action = @field(Packet.Id, field.name);
+        if (action.supportsDirection(scope)) {
+            fields[i] = field;
+            i += 1;
+        }
+    }
+
+    // Build our union
+    return @Type(.{ .@"enum" = .{
+        .fields = fields[0..i],
+        .tag_type = @typeInfo(Packet.Id).@"enum".tag_type,
+        .decls = &.{},
+        .is_exhaustive = @typeInfo(Packet.Id).@"enum".is_exhaustive,
+    } });
+}
+
+pub fn ScopedPacket(comptime scope: Packet.Id.Direction) type {
+    const Tag = @typeInfo(Packet).@"union".tag_type.?;
+    const all_fields = @typeInfo(Packet).@"union".fields;
+    const all_tags = @typeInfo(Tag).@"enum".fields;
+    @setEvalBranchQuota(10000);
+
+    // Find all fields that are scoped to s
+    var i: usize = 0;
+    var fields: [all_fields.len]std.builtin.Type.UnionField = undefined;
+    var tags: [all_fields.len]std.builtin.Type.EnumField = undefined;
+
+    for (all_fields, all_tags) |field, tag| {
+        const action = @field(Tag, field.name);
+        if (action.supportsDirection(scope)) {
+            fields[i] = field;
+            tags[i] = tag;
+            i += 1;
+        }
+    }
+
+    // Build our union
+    return @Type(.{ .@"union" = .{
+        .layout = .auto,
+        .tag_type = ScopedPacketId(scope),
+        .fields = fields[0..i],
+        .decls = &.{},
+    } });
+}
+
+pub fn scoped(self: Packet, comptime s: Packet.Id.Direction) ?ScopedPacket(s) {
+    switch (self) {
+        inline else => |v, tag| {
+            if (!tag.supportsDirection(s)) return null;
+            return @unionInit(
+                ScopedPacket(s),
+                @tagName(tag),
+                v,
+            );
+        },
+    }
+}
+
+fn scopedId(self: Packet.Id, comptime s: Packet.Id.Direction) ?ScopedPacketId(s) {
+    switch (self) {
+        inline else => |tag| {
+            if (comptime !tag.supportsDirection(s)) return null;
+            return @field(ScopedPacketId(s), @tagName(tag));
+        },
+    }
+}
+
+pub fn changeDirection(from_server: ScopedPacket(.server_to_client)) ScopedPacket(.client_to_server) {
+    switch (from_server) {
+        inline else => |payload, tag| {
+            if (comptime !@field(Packet.Id, @tagName(tag)).supportsDirection(.client_to_server))
+                unreachable;
+
+            return @unionInit(ScopedPacket(.client_to_server), @tagName(tag), payload);
+        },
+    }
+}
+
+pub fn read(reader: anytype, arena: std.mem.Allocator) !ScopedPacket(.server_to_client) {
+    @setEvalBranchQuota(100000);
+
+    const int = try reader.readInt(@typeInfo(Packet.Id).@"enum".tag_type, .big);
+    const packet_id = std.meta.intToEnum(Packet.Id, int) catch {
         log.err("unknown packed {x}", .{int});
         return error.UnknownPacket;
     };
 
+    const server_to_client_packet = scopedId(packet_id, .server_to_client) orelse {
+        std.log.err("{s}", .{@tagName(packet_id)});
+        return error.GotClientToServerPacket;
+    };
     log.debug("got packet {s}", .{@tagName(packet_id)});
-    switch (packet_id) {
+
+    switch (server_to_client_packet) {
         inline else => |id| blk: {
             const T = @FieldType(Packet, @tagName(id));
             var result: T = undefined;
@@ -827,22 +1015,19 @@ pub fn read(reader: anytype, arena: std.mem.Allocator) !Packet {
                                 }
                                 @field(result, field.name) = children;
                             },
-                            else => {
-                                @compileLog(T, F);
-                                comptime unreachable;
-                            },
+                            else => comptime unreachable,
                         }
                     },
                 }
             }
 
-            return @unionInit(Packet, @tagName(id), result);
+            return @unionInit(ScopedPacket(.server_to_client), @tagName(id), result);
         },
     }
     unreachable;
 }
 
-pub fn readExpectedPacket(reader: anytype, arena: std.mem.Allocator, comptime packet_id: PacketId) !@FieldType(Packet, @tagName(packet_id)) {
+pub fn readExpectedPacket(reader: anytype, arena: std.mem.Allocator, comptime packet_id: ScopedPacketId(.server_to_client)) !@FieldType(Packet, @tagName(packet_id)) {
     const packet = try read(reader, arena);
     if (packet == packet_id) {
         return @field(packet, @tagName(packet_id));
@@ -850,9 +1035,9 @@ pub fn readExpectedPacket(reader: anytype, arena: std.mem.Allocator, comptime pa
     return error.UnexpectedPacket;
 }
 
-pub fn write(packet: Packet, writer: anytype) !void {
+pub fn write(packet: ScopedPacket(.client_to_server), writer: anytype) !void {
     log.debug("sending {s}", .{@tagName(packet)});
-    @setEvalBranchQuota(2000);
+    @setEvalBranchQuota(10000);
     try writer.writeInt(u8, @intFromEnum(packet), .big);
     switch (packet) {
         inline else => |content| blk: {
@@ -885,10 +1070,10 @@ pub fn write(packet: Packet, writer: anytype) !void {
                             .@"enum" => {
                                 try writer.writeInt(@TypeOf(@intFromEnum(value)), @intFromEnum(value), .big);
                             },
-                            else => {
-                                // @compileLog(e);
-                                unreachable;
+                            .@"struct" => {
+                                // TODO
                             },
+                            else => comptime unreachable,
                         }
                     },
                 }
