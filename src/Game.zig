@@ -471,6 +471,10 @@ pub fn networkThread(
                 defer mutex.unlock();
 
                 last_message_id = world.chat.send(chat.message.utf8, .server);
+
+                if (std.mem.containsAtLeast(u8, chat.message.utf8, 1, "Please login with \"")) {
+                    _ = world.chat.send("/login abacaba", .client);
+                }
             },
             .@"Spawn Named Entity" => |sp| {
                 mutex.lock();
