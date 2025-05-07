@@ -50,7 +50,8 @@ flat in uint typ;
 out vec4 frag_color;
 
 void main() {
-    vec4 color = vec4(fract(float(typ) * 0.23), fract(float(typ) * 0.33), fract(float(typ) * 0.49),1);
+    if (typ == 0) discard;
+    vec4 color = vec4(fract(float(typ) * 0.23), fract(float(typ) * 0.33), fract(float(typ) * 0.49), 1);
     frag_color = color;
 }
 @end

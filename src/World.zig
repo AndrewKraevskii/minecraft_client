@@ -38,7 +38,7 @@ pub const Chunk = struct {
         _,
     };
 
-    const Pos = struct {
+    pub const Pos = struct {
         x: i32,
         y: u4,
         z: i32,

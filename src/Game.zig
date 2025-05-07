@@ -60,6 +60,7 @@ fn sokolInit(user_data: ?*anyopaque) callconv(.c) void {
 
     // initialize sokol-gfx
     sg.setup(.{
+        .buffer_pool_size = 10000,
         .environment = sglue.environment(),
         .logger = .{ .func = slog.func },
     });
@@ -70,6 +71,7 @@ fn sokolInit(user_data: ?*anyopaque) callconv(.c) void {
     // initial clear color
 
     const sokol2d = Sokol2d.init(gpa.allocator()) catch @panic("OOM");
+    const renderer = Renderer.init(gpa.allocator()) catch @panic("OOM");
 
     state.* = .{
         .input = .init,
@@ -80,7 +82,7 @@ fn sokolInit(user_data: ?*anyopaque) callconv(.c) void {
             .clear_action = .{},
             .load_action = .{},
         },
-        .renderer = try .init(),
+        .renderer = renderer,
         .gpa = gpa,
         .ui_imgui = .init,
         .world_mutex = .{},
@@ -146,7 +148,7 @@ fn sokolFrame(user_data: ?*anyopaque) callconv(.c) void {
     state.update();
 
     if (state.world) |*world| {
-        if (world.chunks.count() > World.chunks_height * 8 * 8) {
+        if (world.chunks.count() > World.chunks_height * 16 * 16) {
             clearScreen(&state.graphics);
             state.renderer.renderWorld(world);
         } else {
@@ -363,6 +365,8 @@ fn sokolEvent(ev: [*c]const sapp.Event, user_data: ?*anyopaque) callconv(.c) voi
 
 fn sokolCleanup(user_data: ?*anyopaque) callconv(.c) void {
     const state: *@This() = @ptrCast(@alignCast(user_data));
+
+    state.renderer.deinit(state.gpa.allocator());
 
     state.graphics.sokol_2d.deinit(state.gpa.allocator());
     if (state.world) |*world| {

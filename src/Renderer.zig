@@ -15,8 +15,11 @@ const Renderer = @This();
 
 pipeline: sg.Pipeline,
 bind: sg.Bindings,
+chunks: Chunks,
 
-pub fn init() !Renderer {
+const Chunks = std.AutoArrayHashMapUnmanaged(World.Chunk.Pos, sg.Buffer);
+
+pub fn init(gpa: std.mem.Allocator) !Renderer {
     const pipeline = sg.makePipeline(.{
         .shader = sg.makeShader(shd.vertexpullShaderDesc(sg.queryBackend())),
         .index_type = .UINT16,
@@ -73,26 +76,41 @@ pub fn init() !Renderer {
         .label = "vertices",
     });
 
-    var block_type_buffer: [16 * 16 * 16]u8 = undefined;
-    for (&block_type_buffer, 0..) |*block, i| {
-        block.* = @truncate(i);
-    }
-
-    const cube_types = sg.makeBuffer(.{
-        .type = .STORAGEBUFFER,
-        .data = sg.asRange(&@as([16 * 16 * 16 / 4]shd.Blocktype, @bitCast(block_type_buffer))),
-        .label = "vertices",
-    });
     var bind: sg.Bindings = .{};
 
     bind.index_buffer = index_buffer;
     bind.storage_buffers[shd.SBUF_vertices] = cube_data;
-    bind.storage_buffers[shd.SBUF_ssbo_type] = cube_types;
+
+    var chunks: Chunks = .empty; 
+    try chunks.ensureTotalCapacity(gpa, World.max_chunks);
 
     return .{
         .pipeline = pipeline,
         .bind = bind,
+        .chunks = chunks,
     };
+}
+
+/// Load chunk or replace existing one.
+pub fn loadChunk(r: *Renderer, pos: World.Chunk.Pos, chunk: World.Chunk) sg.Buffer {
+    const gop = r.chunks.getOrPutAssumeCapacity(pos);
+    if (gop.found_existing) {
+        return gop.value_ptr.*;
+        // std.log.debug("destroy chunk {d}x{d}x{d}",.{pos.x, pos.y, pos.z});
+        // sg.destroyBuffer(gop.value_ptr.*);
+    }
+    gop.value_ptr.* = sg.makeBuffer(.{
+        .type = .STORAGEBUFFER,
+        .data = sg.asRange(&@as([16 * 16 * 16 / 4]shd.Blocktype, @bitCast(chunk.block_type))),
+        .label = "chunk",
+    });
+    // std.log.debug("loaded chunk {d}x{d}x{d}",.{pos.x, pos.y, pos.z});
+
+    return gop.value_ptr.*;
+}
+
+pub fn deinit(r: *const Renderer, gpa: std.mem.Allocator) void {
+    @constCast(r).chunks.deinit(gpa);
 }
 
 pub fn renderWorld(renderer: *Renderer, world: *const World) void {
@@ -122,7 +140,9 @@ pub fn renderWorld(renderer: *Renderer, world: *const World) void {
         .swapchain = sglue.swapchain(),
     });
 
-    for (world.chunks.keys(), world.chunks.values()) |pos, _| {
+    for (world.chunks.keys(), world.chunks.values()) |pos, chunk| {
+        const buffer = renderer.loadChunk(pos, chunk);
+        renderer.bind.storage_buffers[shd.SBUF_ssbo_type] = buffer;
         const translation_from_origin = geom.sqrt(geom.product(my_pos, geom.reverse(geom.Point{
             .e123 = 1,
             .e023 = @as(f32, @floatFromInt(pos.x)) * 16,
