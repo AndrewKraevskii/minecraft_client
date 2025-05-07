@@ -99,7 +99,7 @@ fn sokolInit(user_data: ?*anyopaque) callconv(.c) void {
 }
 
 const UiImgui = struct {
-    user_name: [100:0]u8 = ("andrew" ++ "\x00" ** (100 - 6)).*,
+    user_name: [100:0]u8 = ("real_andrew" ++ "\x00" ** (100 - 11)).*,
     ip_buffer: ["255.255.255.255".len:0]u8 = ("31.56.39.199" ++ "\x00\x00\x00").*,
     port: u16 = 25565,
 
@@ -148,7 +148,7 @@ fn sokolFrame(user_data: ?*anyopaque) callconv(.c) void {
     state.update();
 
     if (state.world) |*world| {
-        if (world.chunks.count() > World.chunks_height * 16 * 16) {
+        if (world.chunks.count() > World.chunks_height * 6 * 6) {
             clearScreen(&state.graphics);
             state.renderer.renderWorld(world);
         } else {
@@ -193,7 +193,7 @@ fn sokolFrame(user_data: ?*anyopaque) callconv(.c) void {
                     username,
                     ip,
                     port,
-                ) catch fail("Failed to connect", .{});
+                ) catch |e| fail("Failed to connect {s}", .{@errorName(e)});
                 state.world = world;
 
                 state.network_thread = std.Thread.spawn(.{}, networkThread, .{

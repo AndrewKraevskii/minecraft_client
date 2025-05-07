@@ -33,10 +33,10 @@ void main() {
     vec3 position = vtx[gl_VertexIndex].pos;
 
     float x = float(gl_InstanceIndex & 0xf);
-    float y = float((gl_InstanceIndex >> 4) & 0xf);
-    float z = float((gl_InstanceIndex >> 8) & 0xf);
+    float z = float((gl_InstanceIndex >> 4) & 0xf);
+    float y = float((gl_InstanceIndex >> 8) & 0xf);
 
-    uint block_type = ((instance[gl_InstanceIndex >> 2].typ) >> (gl_InstanceIndex & 0x3)) & 0xff;
+    uint block_type = ((instance[gl_InstanceIndex >> 2].typ) >> (gl_InstanceIndex & 0x3) * 8) & 0xff;
 
     const float minfov = 80.0 * PI / 180.0;
 
@@ -51,6 +51,7 @@ out vec4 frag_color;
 
 void main() {
     if (typ == 0) discard;
+
     vec4 color = vec4(fract(float(typ) * 0.23), fract(float(typ) * 0.33), fract(float(typ) * 0.49), 1);
     frag_color = color;
 }

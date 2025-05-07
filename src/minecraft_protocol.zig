@@ -1032,6 +1032,10 @@ pub fn readExpectedPacket(reader: anytype, arena: std.mem.Allocator, comptime pa
     if (packet == packet_id) {
         return @field(packet, @tagName(packet_id));
     }
+    std.log.err("expected {s} but found {s}", .{ @tagName(packet_id), @tagName(packet) });
+    if (packet == .@"Disconnect/Kick") {
+        std.log.err("reason {s}", .{packet.@"Disconnect/Kick".reason.utf8});
+    }
     return error.UnexpectedPacket;
 }
 

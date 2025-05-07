@@ -142,7 +142,9 @@ pub fn renderWorld(renderer: *Renderer, world: *const World) void {
 
     for (world.chunks.keys(), world.chunks.values()) |pos, chunk| {
         const buffer = renderer.loadChunk(pos, chunk);
+
         renderer.bind.storage_buffers[shd.SBUF_ssbo_type] = buffer;
+
         const translation_from_origin = geom.sqrt(geom.product(my_pos, geom.reverse(geom.Point{
             .e123 = 1,
             .e023 = @as(f32, @floatFromInt(pos.x)) * 16,
