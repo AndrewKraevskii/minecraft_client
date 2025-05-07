@@ -25,7 +25,8 @@ layout(binding=1) readonly buffer vertices {
     sb_vertex vtx[];
 };
 
-out vec4 color;
+out uint typ;
+
 
 void main() {
     motor motor_ = mat2x4(mot1, mot2);
@@ -35,19 +36,21 @@ void main() {
     float y = float((gl_InstanceIndex >> 4) & 0xf);
     float z = float((gl_InstanceIndex >> 8) & 0xf);
 
-    float block_type = ((instance[gl_InstanceIndex >> 2].typ) >> (gl_InstanceIndex & 0x3)) & 0xff;
+    uint block_type = ((instance[gl_InstanceIndex >> 2].typ) >> (gl_InstanceIndex & 0x3)) & 0xff;
 
-    gl_Position = project(0, 100, 90, 1, sw_mp(motor_, position + vec3(x, y, z)));
-   
-    color = vec4(fract(block_type * 0.23), fract(block_type * 0.33), fract(block_type * 0.49),1);
+    const float minfov = 80.0 * PI / 180.0;
+
+    gl_Position = project(0.1, 1000, minfov, 1, sw_mp(motor_, position + vec3(x, y, z)));
+    typ = block_type;
 }
 @end
 
 @fs fs
-in vec4 color;
+flat in uint typ;
 out vec4 frag_color;
 
 void main() {
+    vec4 color = vec4(fract(float(typ) * 0.23), fract(float(typ) * 0.33), fract(float(typ) * 0.49),1);
     frag_color = color;
 }
 @end

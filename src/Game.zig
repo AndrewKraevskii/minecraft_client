@@ -148,7 +148,7 @@ fn sokolFrame(user_data: ?*anyopaque) callconv(.c) void {
     if (state.world) |*world| {
         if (world.chunks.count() > World.chunks_height * 8 * 8) {
             clearScreen(&state.graphics);
-            state.renderer.renderWorld(world, state.graphics.load_action);
+            state.renderer.renderWorld(world);
         } else {
             drawLoadingScreen(&state.graphics, world);
         }

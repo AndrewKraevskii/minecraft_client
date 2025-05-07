@@ -21,7 +21,7 @@ pub fn init() !Renderer {
         .shader = sg.makeShader(shd.vertexpullShaderDesc(sg.queryBackend())),
         .index_type = .UINT16,
         .depth = .{
-            .compare = .LESS_EQUAL,
+            .compare = .LESS,
             .write_enabled = true,
         },
         .cull_mode = .BACK,
@@ -44,30 +44,30 @@ pub fn init() !Renderer {
         .type = .STORAGEBUFFER,
         .data = sg.asRange(&[_]shd.SbVertex{
             // zig fmt: off
-            .{ .pos = .{ -1.0, -1.0, -1.0 } },
-            .{ .pos = .{  1.0, -1.0, -1.0 } },
-            .{ .pos = .{  1.0,  1.0, -1.0 } },
-            .{ .pos = .{ -1.0,  1.0, -1.0 } },
-            .{ .pos = .{ -1.0, -1.0,  1.0 } },
-            .{ .pos = .{  1.0, -1.0,  1.0 } },
-            .{ .pos = .{  1.0,  1.0,  1.0 } },
-            .{ .pos = .{ -1.0,  1.0,  1.0 } },
-            .{ .pos = .{ -1.0, -1.0, -1.0 } },
-            .{ .pos = .{ -1.0,  1.0, -1.0 } },
-            .{ .pos = .{ -1.0,  1.0,  1.0 } },
-            .{ .pos = .{ -1.0, -1.0,  1.0 } },
-            .{ .pos = .{  1.0, -1.0, -1.0 } },
-            .{ .pos = .{  1.0,  1.0, -1.0 } },
-            .{ .pos = .{  1.0,  1.0,  1.0 } },
-            .{ .pos = .{  1.0, -1.0,  1.0 } },
-            .{ .pos = .{ -1.0, -1.0, -1.0 } },
-            .{ .pos = .{ -1.0, -1.0,  1.0 } },
-            .{ .pos = .{  1.0, -1.0,  1.0 } },
-            .{ .pos = .{  1.0, -1.0, -1.0 } },
-            .{ .pos = .{ -1.0,  1.0, -1.0 } },
-            .{ .pos = .{ -1.0,  1.0,  1.0 } },
-            .{ .pos = .{  1.0,  1.0,  1.0 } },
-            .{ .pos = .{  1.0,  1.0, -1.0 } },
+            .{ .pos = .{ -0.5, -0.5, -0.5 } },
+            .{ .pos = .{  0.5, -0.5, -0.5 } },
+            .{ .pos = .{  0.5,  0.5, -0.5 } },
+            .{ .pos = .{ -0.5,  0.5, -0.5 } },
+            .{ .pos = .{ -0.5, -0.5,  0.5 } },
+            .{ .pos = .{  0.5, -0.5,  0.5 } },
+            .{ .pos = .{  0.5,  0.5,  0.5 } },
+            .{ .pos = .{ -0.5,  0.5,  0.5 } },
+            .{ .pos = .{ -0.5, -0.5, -0.5 } },
+            .{ .pos = .{ -0.5,  0.5, -0.5 } },
+            .{ .pos = .{ -0.5,  0.5,  0.5 } },
+            .{ .pos = .{ -0.5, -0.5,  0.5 } },
+            .{ .pos = .{  0.5, -0.5, -0.5 } },
+            .{ .pos = .{  0.5,  0.5, -0.5 } },
+            .{ .pos = .{  0.5,  0.5,  0.5 } },
+            .{ .pos = .{  0.5, -0.5,  0.5 } },
+            .{ .pos = .{ -0.5, -0.5, -0.5 } },
+            .{ .pos = .{ -0.5, -0.5,  0.5 } },
+            .{ .pos = .{  0.5, -0.5,  0.5 } },
+            .{ .pos = .{  0.5, -0.5, -0.5 } },
+            .{ .pos = .{ -0.5,  0.5, -0.5 } },
+            .{ .pos = .{ -0.5,  0.5,  0.5 } },
+            .{ .pos = .{  0.5,  0.5,  0.5 } },
+            .{ .pos = .{  0.5,  0.5, -0.5 } },
             // zig fmt: on
         }),
         .label = "vertices",
@@ -80,7 +80,7 @@ pub fn init() !Renderer {
 
     const cube_types = sg.makeBuffer(.{
         .type = .STORAGEBUFFER,
-        .data = sg.asRange(&@as([16 * 16 * 16 / 4]shd.Blocktype,@bitCast(block_type_buffer))),
+        .data = sg.asRange(&@as([16 * 16 * 16 / 4]shd.Blocktype, @bitCast(block_type_buffer))),
         .label = "vertices",
     });
     var bind: sg.Bindings = .{};
@@ -95,13 +95,17 @@ pub fn init() !Renderer {
     };
 }
 
-pub fn renderWorld(renderer: *Renderer, world: *const World, action: sg.PassAction) void {
+pub fn renderWorld(renderer: *Renderer, world: *const World) void {
+    var action: sg.PassAction = .{};
+    action.colors[0] = .{
+        .load_action = .CLEAR,
+        .clear_value = .{
+            .a = 1,
+        },
+    };
+
     const player = world.player();
 
-    const pos_0 = geom.Point{
-        .e123 = 1,
-    };
-    _ = pos_0; // autofix
 
     const my_pos = geom.Point{
         .e023 = player.position[0],
@@ -112,6 +116,12 @@ pub fn renderWorld(renderer: *Renderer, world: *const World, action: sg.PassActi
 
     const rotation_around_origin = toRotor(player.yaw, player.pitch);
 
+
+    sg.beginPass(.{
+        .action = action,
+        .swapchain = sglue.swapchain(),
+    });
+
     for (world.chunks.keys(), world.chunks.values()) |pos, _| {
         const translation_from_origin = geom.sqrt(geom.product(my_pos, geom.reverse(geom.Point{
             .e123 = 1,
@@ -121,20 +131,14 @@ pub fn renderWorld(renderer: *Renderer, world: *const World, action: sg.PassActi
         })));
         const motor = geom.product(rotation_around_origin, translation_from_origin);
 
-        sg.beginPass(.{
-            .action = action,
-            .swapchain = sglue.swapchain(),
-        });
-
         sg.applyPipeline(renderer.pipeline);
         sg.applyBindings(renderer.bind);
         sg.applyUniforms(shd.UB_vs_params, sg.asRange(&motorToVsParams(motor)));
 
         sg.draw(0, 36, 16 * 16 * 16);
-        sg.endPass();
-        sg.commit();
-    break;
     }
+    sg.endPass();
+    sg.commit();
 }
 
 fn motorToVsParams(motor: geom.Motor) shd.VsParams {
