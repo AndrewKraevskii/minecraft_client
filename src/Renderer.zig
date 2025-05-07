@@ -44,39 +44,50 @@ pub fn init() !Renderer {
         .type = .STORAGEBUFFER,
         .data = sg.asRange(&[_]shd.SbVertex{
             // zig fmt: off
-            .{ .pos = .{ -1.0, -1.0, -1.0 }, .color = .{ 1.0, 0.0, 0.0, 1.0 } },
-            .{ .pos = .{  1.0, -1.0, -1.0 }, .color = .{ 1.0, 0.0, 0.0, 1.0 } },
-            .{ .pos = .{  1.0,  1.0, -1.0 }, .color = .{ 1.0, 0.0, 0.0, 1.0 } },
-            .{ .pos = .{ -1.0,  1.0, -1.0 }, .color = .{ 1.0, 0.0, 0.0, 1.0 } },
-            .{ .pos = .{ -1.0, -1.0,  1.0 }, .color = .{ 0.0, 1.0, 0.0, 1.0 } },
-            .{ .pos = .{  1.0, -1.0,  1.0 }, .color = .{ 0.0, 1.0, 0.0, 1.0 } },
-            .{ .pos = .{  1.0,  1.0,  1.0 }, .color = .{ 0.0, 1.0, 0.0, 1.0 } },
-            .{ .pos = .{ -1.0,  1.0,  1.0 }, .color = .{ 0.0, 1.0, 0.0, 1.0 } },
-            .{ .pos = .{ -1.0, -1.0, -1.0 }, .color = .{ 0.0, 0.0, 1.0, 1.0 } },
-            .{ .pos = .{ -1.0,  1.0, -1.0 }, .color = .{ 0.0, 0.0, 1.0, 1.0 } },
-            .{ .pos = .{ -1.0,  1.0,  1.0 }, .color = .{ 0.0, 0.0, 1.0, 1.0 } },
-            .{ .pos = .{ -1.0, -1.0,  1.0 }, .color = .{ 0.0, 0.0, 1.0, 1.0 } },
-            .{ .pos = .{  1.0, -1.0, -1.0 }, .color = .{ 1.0, 0.5, 0.0, 1.0 } },
-            .{ .pos = .{  1.0,  1.0, -1.0 }, .color = .{ 1.0, 0.5, 0.0, 1.0 } },
-            .{ .pos = .{  1.0,  1.0,  1.0 }, .color = .{ 1.0, 0.5, 0.0, 1.0 } },
-            .{ .pos = .{  1.0, -1.0,  1.0 }, .color = .{ 1.0, 0.5, 0.0, 1.0 } },
-            .{ .pos = .{ -1.0, -1.0, -1.0 }, .color = .{ 0.0, 0.5, 1.0, 1.0 } },
-            .{ .pos = .{ -1.0, -1.0,  1.0 }, .color = .{ 0.0, 0.5, 1.0, 1.0 } },
-            .{ .pos = .{  1.0, -1.0,  1.0 }, .color = .{ 0.0, 0.5, 1.0, 1.0 } },
-            .{ .pos = .{  1.0, -1.0, -1.0 }, .color = .{ 0.0, 0.5, 1.0, 1.0 } },
-            .{ .pos = .{ -1.0,  1.0, -1.0 }, .color = .{ 1.0, 0.0, 0.5, 1.0 } },
-            .{ .pos = .{ -1.0,  1.0,  1.0 }, .color = .{ 1.0, 0.0, 0.5, 1.0 } },
-            .{ .pos = .{  1.0,  1.0,  1.0 }, .color = .{ 1.0, 0.0, 0.5, 1.0 } },
-            .{ .pos = .{  1.0,  1.0, -1.0 }, .color = .{ 1.0, 0.0, 0.5, 1.0 } },
+            .{ .pos = .{ -1.0, -1.0, -1.0 } },
+            .{ .pos = .{  1.0, -1.0, -1.0 } },
+            .{ .pos = .{  1.0,  1.0, -1.0 } },
+            .{ .pos = .{ -1.0,  1.0, -1.0 } },
+            .{ .pos = .{ -1.0, -1.0,  1.0 } },
+            .{ .pos = .{  1.0, -1.0,  1.0 } },
+            .{ .pos = .{  1.0,  1.0,  1.0 } },
+            .{ .pos = .{ -1.0,  1.0,  1.0 } },
+            .{ .pos = .{ -1.0, -1.0, -1.0 } },
+            .{ .pos = .{ -1.0,  1.0, -1.0 } },
+            .{ .pos = .{ -1.0,  1.0,  1.0 } },
+            .{ .pos = .{ -1.0, -1.0,  1.0 } },
+            .{ .pos = .{  1.0, -1.0, -1.0 } },
+            .{ .pos = .{  1.0,  1.0, -1.0 } },
+            .{ .pos = .{  1.0,  1.0,  1.0 } },
+            .{ .pos = .{  1.0, -1.0,  1.0 } },
+            .{ .pos = .{ -1.0, -1.0, -1.0 } },
+            .{ .pos = .{ -1.0, -1.0,  1.0 } },
+            .{ .pos = .{  1.0, -1.0,  1.0 } },
+            .{ .pos = .{  1.0, -1.0, -1.0 } },
+            .{ .pos = .{ -1.0,  1.0, -1.0 } },
+            .{ .pos = .{ -1.0,  1.0,  1.0 } },
+            .{ .pos = .{  1.0,  1.0,  1.0 } },
+            .{ .pos = .{  1.0,  1.0, -1.0 } },
             // zig fmt: on
         }),
+        .label = "vertices",
+    });
+
+    var block_type_buffer: [16 * 16 * 16]u8 = undefined;
+    for (&block_type_buffer, 0..) |*block, i| {
+        block.* = @truncate(i);
+    }
+
+    const cube_types = sg.makeBuffer(.{
+        .type = .STORAGEBUFFER,
+        .data = sg.asRange(&@as([16 * 16 * 16 / 4]shd.Blocktype,@bitCast(block_type_buffer))),
         .label = "vertices",
     });
     var bind: sg.Bindings = .{};
 
     bind.index_buffer = index_buffer;
-    bind.storage_buffers[shd.SBUF_ssbo] = cube_data;
-
+    bind.storage_buffers[shd.SBUF_vertices] = cube_data;
+    bind.storage_buffers[shd.SBUF_ssbo_type] = cube_types;
 
     return .{
         .pipeline = pipeline,
@@ -101,9 +112,7 @@ pub fn renderWorld(renderer: *Renderer, world: *const World, action: sg.PassActi
 
     const rotation_around_origin = toRotor(player.yaw, player.pitch);
 
-
-    for (world.chunks.keys(), world.chunks.values()) |pos, chunk|{
-        _ = chunk; // autofix
+    for (world.chunks.keys(), world.chunks.values()) |pos, _| {
         const translation_from_origin = geom.sqrt(geom.product(my_pos, geom.reverse(geom.Point{
             .e123 = 1,
             .e023 = @as(f32, @floatFromInt(pos.x)) * 16,
@@ -119,19 +128,13 @@ pub fn renderWorld(renderer: *Renderer, world: *const World, action: sg.PassActi
 
         sg.applyPipeline(renderer.pipeline);
         sg.applyBindings(renderer.bind);
-        sg.applyUniforms(
-            shd.UB_vs_params,
-            sg.asRange(&motorToVsParams(motor))
-        );
+        sg.applyUniforms(shd.UB_vs_params, sg.asRange(&motorToVsParams(motor)));
 
-
-        sg.draw(0, 36, 1);
+        sg.draw(0, 36, 16 * 16 * 16);
         sg.endPass();
         sg.commit();
+    break;
     }
-    
-    
-
 }
 
 fn motorToVsParams(motor: geom.Motor) shd.VsParams {
@@ -141,8 +144,7 @@ fn motorToVsParams(motor: geom.Motor) shd.VsParams {
     };
 }
 
-fn toRotor(yaw: f32, pitch: f32) geom.Motor
-{
+fn toRotor(yaw: f32, pitch: f32) geom.Motor {
     const cp = @cos(pitch * 0.5);
     const sp = @sin(pitch * 0.5);
     const cy = @cos(yaw * 0.5);
@@ -150,9 +152,8 @@ fn toRotor(yaw: f32, pitch: f32) geom.Motor
 
     return .{
         .e = cp * cy,
-        .e12 = - sp * sy,
+        .e12 = -sp * sy,
         .e23 = sp * cy,
         .e13 = -cp * sy,
     };
-
 }
