@@ -9,6 +9,7 @@ const sglue = sokol.glue;
 const slog = sokol.log;
 const simgui = sokol.imgui;
 const Sokol2d = @import("sokol_2d");
+const Config = @import("Config.zig");
 
 const ChunkColumn = @import("ChunkColumn.zig");
 const networking = @import("minecraft_protocol.zig");
@@ -28,8 +29,10 @@ pub const std_options: std.Options = .{
 };
 
 const Game = @This();
+const config_path = "config.zon";
 
 gpa: std.heap.GeneralPurposeAllocator(.{}),
+config: Config,
 
 world_mutex: Mutex,
 world: ?World,
@@ -73,7 +76,10 @@ fn sokolInit(user_data: ?*anyopaque) callconv(.c) void {
     const sokol2d = Sokol2d.init(gpa.allocator()) catch @panic("OOM");
     const renderer = Renderer.init(gpa.allocator()) catch @panic("OOM");
 
+    const config = Config.load(gpa.allocator(), config_path);
+
     state.* = .{
+        .config = config,
         .input = .init,
         .network_thread = undefined,
         .running = true,
@@ -84,7 +90,7 @@ fn sokolInit(user_data: ?*anyopaque) callconv(.c) void {
         },
         .renderer = renderer,
         .gpa = gpa,
-        .ui_imgui = .init,
+        .ui_imgui = .init(config.username, config.server_ip, config.server_port, config.password),
         .world_mutex = .{},
         .world = null,
         .events = .empty,
@@ -99,13 +105,37 @@ fn sokolInit(user_data: ?*anyopaque) callconv(.c) void {
 }
 
 const UiImgui = struct {
-    user_name: [100:0]u8 = ("real_andrew" ++ "\x00" ** (100 - 11)).*,
-    ip_buffer: ["255.255.255.255".len:0]u8 = ("31.56.39.199" ++ "\x00\x00\x00").*,
-    port: u16 = 25565,
+    username: [100:0]u8,
+    ip_buffer: ["255.255.255.255".len:0]u8,
+    port: u16 = 0,
+    password: [100:0]u8,
 
-    send_message: [100:0]u8 = @splat(0),
+    send_message: [100:0]u8,
 
-    const init: UiImgui = .{};
+    pub fn init(
+        username: ?[]const u8,
+        ip: ?[]const u8,
+        port: ?u16,
+        password: ?[]const u8,
+    ) UiImgui {
+        var ui: UiImgui = .{
+            .username = @splat(0),
+            .ip_buffer = @splat(0),
+            .port = port orelse 0,
+            .send_message = @splat(0),
+            .password = @splat(0),
+        };
+        if (username) |un| {
+            @memcpy(ui.username[0..un.len], un);
+        }
+        if (password) |pswd| {
+            @memcpy(ui.password[0..pswd.len], pswd);
+        }
+        if (ip) |_ip| {
+            @memcpy(ui.ip_buffer[0.._ip.len], _ip);
+        }
+        return ui;
+    }
 };
 
 fn update(state: *@This()) void {
@@ -166,17 +196,18 @@ fn sokolFrame(user_data: ?*anyopaque) callconv(.c) void {
         if (state.world) |*world| {
             renderChat(&world.chat, &state.ui_imgui);
         } else {
-            _ = ig.igInputText("Username", &state.ui_imgui.user_name, state.ui_imgui.user_name.len, 0);
+            _ = ig.igInputText("Username", &state.ui_imgui.username, state.ui_imgui.username.len, 0);
             _ = ig.igInputText("Server IP", &state.ui_imgui.ip_buffer, state.ui_imgui.ip_buffer.len, 0);
             {
                 var int: c_int = state.ui_imgui.port;
                 _ = ig.igInputInt("Port", &int);
                 state.ui_imgui.port = std.math.lossyCast(u16, int);
             }
+            _ = ig.igInputText("Password", &state.ui_imgui.password, state.ui_imgui.password.len, 0);
 
             if (ig.igButton("Connect")) connect: {
                 const ip = std.mem.span(@as([*:0]const u8, &state.ui_imgui.ip_buffer));
-                const username = std.mem.span(@as([*:0]const u8, &state.ui_imgui.user_name));
+                const username = std.mem.span(@as([*:0]const u8, &state.ui_imgui.username));
                 const port = state.ui_imgui.port;
 
                 const address = std.net.Address.parseIp4(ip, port) catch |e| {
@@ -199,6 +230,7 @@ fn sokolFrame(user_data: ?*anyopaque) callconv(.c) void {
                 state.network_thread = std.Thread.spawn(.{}, networkThread, .{
                     state.gpa.allocator(),
                     stream,
+                    &state.config,
                     &state.world_mutex,
                     &state.world.?,
                     &state.events,
@@ -366,6 +398,13 @@ fn sokolEvent(ev: [*c]const sapp.Event, user_data: ?*anyopaque) callconv(.c) voi
 fn sokolCleanup(user_data: ?*anyopaque) callconv(.c) void {
     const state: *@This() = @ptrCast(@alignCast(user_data));
 
+    state.config.username = std.mem.span(@as([*:0]const u8, &state.ui_imgui.username));
+    state.config.server_ip = std.mem.span(@as([*:0]const u8, &state.ui_imgui.ip_buffer));
+    state.config.server_port = state.ui_imgui.port;
+    state.config.password = std.mem.span(@as([*:0]const u8, &state.ui_imgui.password));
+
+    state.config.save(config_path);
+
     state.renderer.deinit(state.gpa.allocator());
 
     state.graphics.sokol_2d.deinit(state.gpa.allocator());
@@ -397,6 +436,7 @@ fn fail(comptime fmt: []const u8, args: anytype) noreturn {
 pub fn networkThread(
     gpa: std.mem.Allocator,
     stream: std.net.Stream,
+    config: *Config,
     mutex: *Mutex,
     world: *World,
     events: *Events,
@@ -473,7 +513,8 @@ pub fn networkThread(
                 last_message_id = world.chat.send(chat.message.utf8, .server);
 
                 if (std.mem.containsAtLeast(u8, chat.message.utf8, 1, "Please login with \"")) {
-                    _ = world.chat.send("/login abacaba", .client);
+                    var buffer: [World.max_message_len]u8 = undefined;
+                    _ = world.chat.send(std.fmt.bufPrint(&buffer, "/login {s}", .{config.password orelse ""}) catch buffer[0..], .client);
                 }
             },
             .@"Spawn Named Entity" => |sp| {
