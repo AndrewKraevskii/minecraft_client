@@ -547,49 +547,6 @@ pub fn networkThread(
                 // std.log.debug("got packet {s}", .{@tagName(packet)});
             },
         }
-
-        // switch (packet) {
-        //     inline .@"Entity Look and Relative Move", .@"Entity Relative Move" => |p| blk: {
-        //         const player = game.players.getPtr(p.entity_id) orelse break :blk;
-
-        //         player.pos.x += @as(f32, @floatFromInt(p.dx)) / 32.0;
-        //         player.pos.y += @as(f32, @floatFromInt(p.dy)) / 32.0;
-        //         player.pos.z += @as(f32, @floatFromInt(p.dz)) / 32.0;
-
-        //         // game.position[0] = @floatCast(player.pos.x);
-        //         // game.position[1] = @floatCast(player.pos.y);
-        //         // game.position[2] = @floatCast(player.pos.z);
-
-        //         std.debug.print(
-        //             "moved player {s} {any}\n",
-        //             .{ player.name, player.pos },
-        //         );
-        //     },
-        //     .@"Entity Teleport" => |p| blk: {
-        //         const player = game.players.getPtr(p.entity_id) orelse break :blk;
-        //         player.pos = .{
-        //             .x = (@as(f32, @floatFromInt(p.x))),
-        //             .y = (@as(f32, @floatFromInt(p.y))),
-        //             .z = (@as(f32, @floatFromInt(p.z))),
-        //         };
-        //         std.debug.print(
-        //             "moved player {s} {any}\n",
-        //             .{ player.name, player.pos },
-        //         );
-        //     },
-        //     inline .@"Player Position", .@"Player Position and Look", .@"Player Look", .Player => |p| {
-        //         if (@hasField(@TypeOf(p), "x")) {
-        //             game.position = .{ p.x, p.y, p.z };
-        //         }
-
-        //         if (@hasField(@TypeOf(p), "yaw")) game.yaw = p.yaw;
-        //         if (@hasField(@TypeOf(p), "pitch")) game.pitch = p.pitch;
-
-        //         std.debug.print(
-        //             "update position {any}\n",
-        //             .{game.position},
-        //         );
-        //     },
     }
 }
 

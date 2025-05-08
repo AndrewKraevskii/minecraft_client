@@ -96,15 +96,12 @@ pub fn loadChunk(r: *Renderer, pos: World.Chunk.Pos, chunk: World.Chunk) sg.Buff
     const gop = r.chunks.getOrPutAssumeCapacity(pos);
     if (gop.found_existing) {
         return gop.value_ptr.*;
-        // std.log.debug("destroy chunk {d}x{d}x{d}",.{pos.x, pos.y, pos.z});
-        // sg.destroyBuffer(gop.value_ptr.*);
     }
     gop.value_ptr.* = sg.makeBuffer(.{
         .type = .STORAGEBUFFER,
         .data = sg.asRange(&@as([16 * 16 * 16 / 4]shd.Blocktype, @bitCast(chunk.block_type))),
         .label = "chunk",
     });
-    // std.log.debug("loaded chunk {d}x{d}x{d}",.{pos.x, pos.y, pos.z});
 
     return gop.value_ptr.*;
 }
