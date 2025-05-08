@@ -150,6 +150,7 @@ pub fn init(
     };
     try world.chunks.ensureUnusedCapacity(gpa, max_chunks);
     try world.players.ensureUnusedCapacity(gpa, max_entities);
+
     world.players.putAssumeCapacity(player_id, .{
         .name = Player.Name.fromSlice(username) catch @panic("name to long"),
         .position = player_position,
@@ -175,15 +176,16 @@ pub fn tick(
     events: []const Event,
     delta_t: f32,
 ) void {
+    const yaw = world.player().yaw;
     for (events) |event| {
         switch (event) {
             else => {
                 std.log.err("got event {s}", .{@tagName(event)});
             },
             .player_move => |m| {
-                world.playerPtr().position[0] += m[0] * delta_t * Player.ground_acceleration;
+                world.playerPtr().position[0] += @cos(-yaw) * m[0] * delta_t * Player.ground_acceleration + @sin(yaw) * m[2] * delta_t * Player.ground_acceleration;
                 world.playerPtr().position[1] += m[1] * delta_t * Player.ground_acceleration;
-                world.playerPtr().position[2] += m[2] * delta_t * Player.ground_acceleration;
+                world.playerPtr().position[2] += @sin(-yaw) * m[0] * delta_t * Player.ground_acceleration + @cos(yaw) * m[2] * delta_t * Player.ground_acceleration;
             },
             .player_look_absolute => |l| {
                 world.playerPtr().pitch = l.pitch;

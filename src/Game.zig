@@ -137,8 +137,8 @@ fn sokolFrame(user_data: ?*anyopaque) callconv(.c) void {
                     .A => .{ 1, 0, 0 },
                     .S => .{ 0, 0, -1 },
                     .D => .{ -1, 0, 0 },
-                    .LEFT_SHIFT => .{ 0, -1, 0 },
-                    .LEFT_CONTROL => .{ 0, 1, 0 },
+                    .LEFT_SHIFT => .{ 0, 1, 0 },
+                    .LEFT_CONTROL => .{ 0, -1, 0 },
                     else => comptime unreachable,
                 },
             }) catch @panic("OOM");
