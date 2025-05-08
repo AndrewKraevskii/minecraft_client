@@ -178,7 +178,7 @@ fn sokolFrame(user_data: ?*anyopaque) callconv(.c) void {
     state.update();
 
     if (state.world) |*world| {
-        if (world.chunks.count() > World.chunks_height * 6 * 6) {
+        if (world.chunks.count() > World.chunks_in_column * 6 * 6) {
             clearScreen(&state.graphics);
             state.renderer.renderWorld(world);
         } else {
@@ -390,7 +390,8 @@ fn sokolEvent(ev: [*c]const sapp.Event, user_data: ?*anyopaque) callconv(.c) voi
             else => {},
         },
         else => |t| {
-            std.log.debug("unhandled {s}", .{@tagName(t)});
+            _ = t;
+            // std.log.debug("unhandled {s}", .{@tagName(t)});
         },
     }
 }
@@ -420,6 +421,8 @@ pub fn main() !void {
     var state: @This() = undefined;
 
     sapp.run(.{
+        .width = 640,
+        .height = 480,
         .user_data = &state,
         .init_userdata_cb = &sokolInit,
         .event_userdata_cb = &sokolEvent,
@@ -477,24 +480,44 @@ pub fn networkThread(
                 }
             }
         }
-        const player_pos = player_pos: {
+        const player = player_pos: {
             mutex.lock();
             defer mutex.unlock();
 
-            break :player_pos world.player().position;
+            break :player_pos world.player();
         };
         inline for (@typeInfo(@TypeOf(timers)).@"struct".fields) |field| {
             if (@field(timers, field.name).justFinished()) {
                 const timer = @field(std.meta.FieldEnum(@TypeOf(timers)), field.name);
                 switch (timer) {
                     .send_position => {
+                        std.log.debug(
+                            \\sending position
+                            \\ yaw       = {[yaw]d:.02}
+                            \\ pitch     = {[pitch]d:.02}
+                            \\ x         = {[x]d:.02}
+                            \\ y         = {[y]d:.02}
+                            \\ z         = {[z]d:.02}
+                            \\ stance    = {[stance]d:.02}
+                            \\ on_ground = {[on_ground]}
+                        , .{
+                            .yaw = player.yaw,
+                            .pitch = player.pitch,
+                            .x = player.position[0],
+                            .y = player.position[1],
+                            .z = player.position[2],
+                            .stance = player.stance,
+                            .on_ground = player.on_ground,
+                        });
                         try networking.write(.{
-                            .@"Player Position" = .{
-                                .x = player_pos[0],
-                                .y = player_pos[1],
-                                .z = player_pos[2],
-                                .stance = player_pos[1] + 1.6,
-                                .on_ground = true,
+                            .@"Player Position and Look" = .{
+                                .yaw = player.yaw,
+                                .pitch = player.pitch,
+                                .x = player.position[0],
+                                .y = player.position[1],
+                                .z = player.position[2],
+                                .stance = player.stance,
+                                .on_ground = player.on_ground,
                             },
                         }, stream.writer());
                     },
@@ -504,7 +527,7 @@ pub fn networkThread(
 
         const packet = try networking.read(stream.reader(), packet_arena.allocator());
         switch (packet) {
-            // send same back
+            // send same packet back
             .@"Keep Alive" => try networking.write(networking.changeDirection(packet), stream.writer()),
             .@"Chat Message" => |chat| {
                 mutex.lock();
@@ -554,7 +577,7 @@ pub fn networkThread(
                                 .x = chunk_column_meta.chunk_x,
                                 .y = @intCast(y),
                                 .z = chunk_column_meta.chunk_z,
-                            }, .{ .block_type = chunk.block_type });
+                            }, .{ .block_type = @bitCast(chunk.block_type) });
                         }
                     }
                 }
@@ -578,14 +601,53 @@ pub fn networkThread(
                     if (maybe_chunks) |chunk| {
                         world.loadChunk(.{
                             .x = cd.x,
-                            .y = @intCast(y * 16),
+                            .y = @intCast(y),
                             .z = cd.z,
-                        }, .{ .block_type = chunk.block_type });
+                        }, .{ .block_type = @bitCast(chunk.block_type) });
                     }
                 }
             },
+            .@"Time Update", .@"Player List Item", .@"Update Tile Entity" => {},
+            inline .@"Entity Head Look", .@"Entity Look", .@"Entity Relative Move", .@"Entity Look and Relative Move", .@"Entity Status", .@"Entity Teleport", .@"Entity Velocity" => |e| {
+                std.debug.assert(e.entity_id != @intFromEnum(player.id));
+            },
+            .@"Player Position and Look" => |pl| {
+                std.log.debug(
+                    \\💥💥💥💥💥💥💥💥💥💥server updated our position
+                    \\ yaw       = {[yaw]d:.02}
+                    \\ pitch     = {[pitch]d:.02}
+                    \\ x         = {[x]d:.02}
+                    \\ y         = {[y]d:.02}
+                    \\ z         = {[z]d:.02}
+                    \\ stance    = {[stance]d:.02}
+                    \\ on_ground = {[on_ground]}
+                , .{
+                    .yaw = pl.yaw,
+                    .pitch = pl.pitch,
+                    .x = pl.x,
+                    .y = pl.y,
+                    .z = pl.z,
+                    .stance = pl.stance,
+                    .on_ground = pl.on_ground,
+                });
+
+                try networking.write(networking.changeDirection(packet), stream.writer());
+                const new_player: World.Player = .{
+                    .on_ground = pl.on_ground,
+                    .id = player.id,
+                    .name = player.name,
+                    .pitch = pl.pitch,
+                    .position = .{ @floatCast(pl.x), @floatCast(pl.y), @floatCast(pl.z) },
+                    .stance = @floatCast(pl.stance),
+                    .velocity = player.velocity,
+                    .yaw = pl.yaw,
+                };
+                mutex.lock();
+                defer mutex.unlock();
+                world.playerPtr().* = new_player;
+            },
             else => {
-                // std.log.debug("got packet {s}", .{@tagName(packet)});
+                std.log.debug("got packet {s}", .{@tagName(packet)});
             },
         }
     }

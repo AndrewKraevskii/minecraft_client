@@ -17,7 +17,7 @@ pipeline: sg.Pipeline,
 bind: sg.Bindings,
 chunks: Chunks,
 
-const Chunks = std.AutoArrayHashMapUnmanaged(World.Chunk.Pos, sg.Buffer);
+const Chunks = std.AutoArrayHashMapUnmanaged(World.Chunk.Pos, struct { gen: u64, buffer: sg.Buffer });
 
 pub fn init(gpa: std.mem.Allocator) !Renderer {
     const pipeline = sg.makePipeline(.{
@@ -47,30 +47,30 @@ pub fn init(gpa: std.mem.Allocator) !Renderer {
         .type = .STORAGEBUFFER,
         .data = sg.asRange(&[_]shd.SbVertex{
             // zig fmt: off
-            .{ .pos = .{ -0.5, -0.5, -0.5 } },
-            .{ .pos = .{  0.5, -0.5, -0.5 } },
-            .{ .pos = .{  0.5,  0.5, -0.5 } },
-            .{ .pos = .{ -0.5,  0.5, -0.5 } },
-            .{ .pos = .{ -0.5, -0.5,  0.5 } },
-            .{ .pos = .{  0.5, -0.5,  0.5 } },
-            .{ .pos = .{  0.5,  0.5,  0.5 } },
-            .{ .pos = .{ -0.5,  0.5,  0.5 } },
-            .{ .pos = .{ -0.5, -0.5, -0.5 } },
-            .{ .pos = .{ -0.5,  0.5, -0.5 } },
-            .{ .pos = .{ -0.5,  0.5,  0.5 } },
-            .{ .pos = .{ -0.5, -0.5,  0.5 } },
-            .{ .pos = .{  0.5, -0.5, -0.5 } },
-            .{ .pos = .{  0.5,  0.5, -0.5 } },
-            .{ .pos = .{  0.5,  0.5,  0.5 } },
-            .{ .pos = .{  0.5, -0.5,  0.5 } },
-            .{ .pos = .{ -0.5, -0.5, -0.5 } },
-            .{ .pos = .{ -0.5, -0.5,  0.5 } },
-            .{ .pos = .{  0.5, -0.5,  0.5 } },
-            .{ .pos = .{  0.5, -0.5, -0.5 } },
-            .{ .pos = .{ -0.5,  0.5, -0.5 } },
-            .{ .pos = .{ -0.5,  0.5,  0.5 } },
-            .{ .pos = .{  0.5,  0.5,  0.5 } },
-            .{ .pos = .{  0.5,  0.5, -0.5 } },
+            .{ .pos = .{ 0, 0, 0 } },
+            .{ .pos = .{ 1, 0, 0 } },
+            .{ .pos = .{ 1, 1, 0 } },
+            .{ .pos = .{ 0, 1, 0 } },
+            .{ .pos = .{ 0, 0, 1 } },
+            .{ .pos = .{ 1, 0, 1 } },
+            .{ .pos = .{ 1, 1, 1 } },
+            .{ .pos = .{ 0, 1, 1 } },
+            .{ .pos = .{ 0, 0, 0 } },
+            .{ .pos = .{ 0, 1, 0 } },
+            .{ .pos = .{ 0, 1, 1 } },
+            .{ .pos = .{ 0, 0, 1 } },
+            .{ .pos = .{ 1, 0, 0 } },
+            .{ .pos = .{ 1, 1, 0 } },
+            .{ .pos = .{ 1, 1, 1 } },
+            .{ .pos = .{ 1, 0, 1 } },
+            .{ .pos = .{ 0, 0, 0 } },
+            .{ .pos = .{ 0, 0, 1 } },
+            .{ .pos = .{ 1, 0, 1 } },
+            .{ .pos = .{ 1, 0, 0 } },
+            .{ .pos = .{ 0, 1, 0 } },
+            .{ .pos = .{ 0, 1, 1 } },
+            .{ .pos = .{ 1, 1, 1 } },
+            .{ .pos = .{ 1, 1, 0 } },
             // zig fmt: on
         }),
         .label = "vertices",
@@ -95,15 +95,21 @@ pub fn init(gpa: std.mem.Allocator) !Renderer {
 pub fn loadChunk(r: *Renderer, pos: World.Chunk.Pos, chunk: World.Chunk) sg.Buffer {
     const gop = r.chunks.getOrPutAssumeCapacity(pos);
     if (gop.found_existing) {
-        return gop.value_ptr.*;
-    }
-    gop.value_ptr.* = sg.makeBuffer(.{
-        .type = .STORAGEBUFFER,
-        .data = sg.asRange(&@as([16 * 16 * 16 / 4]shd.Blocktype, @bitCast(chunk.block_type))),
-        .label = "chunk",
-    });
+        if (gop.value_ptr.gen == chunk.gen)
+            return gop.value_ptr.buffer;
 
-    return gop.value_ptr.*;
+        sg.destroyBuffer(gop.value_ptr.buffer);
+    }
+    gop.value_ptr.* = .{
+        .buffer = sg.makeBuffer(.{
+            .type = .STORAGEBUFFER,
+            .data = sg.asRange(&@as([16 * 16 * 16 / 4]shd.Blocktype, @bitCast(chunk.block_type))),
+            .label = "chunk",
+        }),
+        .gen = chunk.gen,
+    };
+
+    return gop.value_ptr.buffer;
 }
 
 pub fn deinit(r: *const Renderer, gpa: std.mem.Allocator) void {
@@ -147,11 +153,13 @@ pub fn renderWorld(renderer: *Renderer, world: *const World) void {
 
         renderer.bind.storage_buffers[shd.SBUF_ssbo_type] = buffer;
 
+        const float_pos = pos.toFloat();
+
         const translation_from_origin = geom.sqrt(geom.product(my_pos, geom.reverse(geom.Point{
             .e123 = 1,
-            .e023 = @as(f32, @floatFromInt(pos.x)) * 16,
-            .e013 = -@as(f32, @floatFromInt(pos.y)) * 16,
-            .e012 = @as(f32, @floatFromInt(pos.z)) * 16,
+            .e023 = float_pos[0],
+            .e013 = -float_pos[1],
+            .e012 = float_pos[2],
         })));
         const motor = geom.product(rotation_around_origin, translation_from_origin);
 

@@ -8,8 +8,8 @@ pub const max_events = 64;
 
 pub const render_distance = 32;
 pub const loaded_diameter = render_distance * 2 + 1;
-pub const chunks_height = 16;
-pub const max_chunks = loaded_diameter * loaded_diameter * chunks_height;
+pub const chunks_in_column = 16;
+pub const max_chunks = loaded_diameter * loaded_diameter * chunks_in_column;
 
 pub const max_message_len = 128;
 pub const message_history_len = 128;
@@ -29,7 +29,9 @@ time: struct {
 
 pub const Chunk = struct {
     ///          Y     Z     X
-    block_type: [size][size][size]u8,
+    block_type: [size][size][size]BlockType,
+    // generation
+    gen: u64 = 0,
 
     pub const size = 16;
 
@@ -42,24 +44,52 @@ pub const Chunk = struct {
         x: i32,
         y: u4,
         z: i32,
+
+        pub fn fromFloatPos(pos: [3]f32) Pos {
+            return .{
+                .x = @intFromFloat(@floor(pos[0] / size)),
+                .y = @intFromFloat(@floor(pos[1] / size)),
+                .z = @intFromFloat(@floor(pos[2] / size)),
+            };
+        }
+
+        pub fn relativeToChunk(pos: Pos, world_pos: [3]f32) [3]u4 {
+            return .{
+                @intFromFloat(world_pos[0] - @as(f32, @floatFromInt(pos.x)) * size),
+                @intFromFloat(world_pos[1] - @as(f32, @floatFromInt(pos.y)) * size),
+                @intFromFloat(world_pos[2] - @as(f32, @floatFromInt(pos.z)) * size),
+            };
+        }
+
+        pub fn toFloat(pos: Pos) [3]f32 {
+            return .{
+                @as(f32, @floatFromInt(pos.x)) * size,
+                @as(f32, @floatFromInt(pos.y)) * size,
+                @as(f32, @floatFromInt(pos.z)) * size,
+            };
+        }
     };
 };
 
-const Player = struct {
+pub const Player = struct {
     id: Id,
     name: Name,
     position: [3]f32,
+    stance: f32 = 1.74,
     velocity: [3]f32 = @splat(0),
     yaw: f32 = 0,
     pitch: f32 = 0,
+    on_ground: bool,
 
     const Name = std.BoundedArray(u8, max_entity_name_len);
     const Id = enum(i32) { _ };
 
+    const debug_speed = speed / 2.0;
+
     const eye_height = 1.62;
     const eneaking_eye_height = 1.27;
 
-    const ground_acceleration = 100;
+    const ground_acceleration = 0.1;
     const bounds_acceleration = 0.5;
     const air_acceleration = 0.02;
 
@@ -70,6 +100,19 @@ const Player = struct {
 
     /// Crouch speed
     const slow_speed = 1.295;
+
+    pub fn setPosition(pl: *Player, pos: [3]f32) void {
+        pl.position = pos;
+        pl.stance = pos[1] - 1.62;
+    }
+
+    pub fn setHeight(pl: *Player, height: f32) void {
+        pl.setPosition(.{
+            pl.position[0],
+            height,
+            pl.position[2],
+        });
+    }
 };
 
 pub const Chat = struct {
@@ -152,6 +195,7 @@ pub fn init(
     try world.players.ensureUnusedCapacity(gpa, max_entities);
 
     world.players.putAssumeCapacity(player_id, .{
+        .on_ground = true,
         .name = Player.Name.fromSlice(username) catch @panic("name to long"),
         .position = player_position,
         .id = player_id,
@@ -183,9 +227,9 @@ pub fn tick(
                 std.log.err("got event {s}", .{@tagName(event)});
             },
             .player_move => |m| {
-                world.playerPtr().position[0] += @cos(-yaw) * m[0] * delta_t * Player.ground_acceleration + @sin(yaw) * m[2] * delta_t * Player.ground_acceleration;
-                world.playerPtr().position[1] += m[1] * delta_t * Player.ground_acceleration;
-                world.playerPtr().position[2] += @sin(-yaw) * m[0] * delta_t * Player.ground_acceleration + @cos(yaw) * m[2] * delta_t * Player.ground_acceleration;
+                world.playerPtr().position[0] += @cos(-yaw) * m[0] * delta_t * Player.debug_speed + @sin(yaw) * m[2] * delta_t * Player.debug_speed;
+                world.playerPtr().position[1] += m[1] * delta_t * Player.debug_speed;
+                world.playerPtr().position[2] += @sin(-yaw) * m[0] * delta_t * Player.debug_speed + @cos(yaw) * m[2] * delta_t * Player.debug_speed;
             },
             .player_look_absolute => |l| {
                 world.playerPtr().pitch = l.pitch;
@@ -197,6 +241,30 @@ pub fn tick(
             },
         }
     }
+
+    // make sure player is always at the top block
+    const top = world.firstNonEmptyBlockAtTheTop(world.player().position[0], world.player().position[2]);
+    world.playerPtr().on_ground = true;
+    world.playerPtr().setHeight(@as(f32, @floatFromInt(top)) + 4.62);
+}
+
+fn firstNonEmptyBlockAtTheTop(world: *const World, x: f32, z: f32) u8 {
+    const chunk_pos = Chunk.Pos.fromFloatPos(.{ x, 0, z });
+    const rel = chunk_pos.relativeToChunk(world.player().position);
+    const height = outer: for (0..16) |chunk_height| {
+        const chunk = world.chunks.get(.{
+            .x = chunk_pos.x,
+            .z = chunk_pos.z,
+            .y = @intCast(15 - chunk_height),
+        }) orelse continue;
+        for (0..16) |index| {
+            if (chunk.block_type[15 - index][rel[2]][rel[0]] != .empty) {
+                break :outer (15 - chunk_height) * 16 + 15 - index;
+            }
+        } else continue :outer;
+    } else return 0;
+
+    return @intCast(height);
 }
 
 pub fn loadChunk(world: *World, position: Chunk.Pos, chunk: Chunk) void {
