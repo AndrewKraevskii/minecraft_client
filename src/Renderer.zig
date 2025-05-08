@@ -111,6 +111,11 @@ pub fn deinit(r: *const Renderer, gpa: std.mem.Allocator) void {
 }
 
 pub fn renderWorld(renderer: *Renderer, world: *const World) void {
+    const width: f32 = sokol.app.widthf();
+    const height: f32 = sokol.app.heightf();
+    const aspect_ratio = width / height;
+
+    
     var action: sg.PassAction = .{};
     action.colors[0] = .{
         .load_action = .CLEAR,
@@ -152,7 +157,7 @@ pub fn renderWorld(renderer: *Renderer, world: *const World) void {
 
         sg.applyPipeline(renderer.pipeline);
         sg.applyBindings(renderer.bind);
-        sg.applyUniforms(shd.UB_vs_params, sg.asRange(&motorToVsParams(motor)));
+        sg.applyUniforms(shd.UB_vs_params, sg.asRange(&motorToVsParams(motor, aspect_ratio)));
 
         sg.draw(0, 36, 16 * 16 * 16);
     }
@@ -160,8 +165,9 @@ pub fn renderWorld(renderer: *Renderer, world: *const World) void {
     sg.commit();
 }
 
-fn motorToVsParams(motor: geom.Motor) shd.VsParams {
+fn motorToVsParams(motor: geom.Motor, aspect_ratio: f32) shd.VsParams {
     return .{
+        .aspect_ratio = aspect_ratio,
         .mot1 = .{ motor.e, motor.e23, -motor.e13, motor.e12 },
         .mot2 = .{ motor.e01, motor.e02, motor.e03, motor.e0123 },
     };

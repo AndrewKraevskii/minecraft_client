@@ -5,6 +5,8 @@ layout(binding=0) uniform vs_params {
     // sokol does not allow use of mat2x4
     vec4 mot1;
     vec4 mot2;
+
+    float aspect_ratio;
 };
 
 // NOTE: 'vertex' is a reserved name in MSL
@@ -41,6 +43,7 @@ void main() {
     const float minfov = 80.0 * PI / 180.0;
 
     gl_Position = project(0.1, 1000, minfov, 1, sw_mp(motor_, position + vec3(x, y, z)));
+    gl_Position.y *= aspect_ratio;
     typ = block_type;
 }
 @end
