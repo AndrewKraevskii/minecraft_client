@@ -31,7 +31,10 @@ pub fn parse(
     skylight: bool,
     ground_up_continuous: bool,
 ) !ChunkColumn {
-    var chunk_column: ChunkColumn = undefined;
+    var chunk_column: ChunkColumn = .{
+        .chunks = @splat(null),
+        .biome = null,
+    };
     try parseSection(&chunk_column, stream, "block_type", primary_mask);
     try parseSection(&chunk_column, stream, "block_meta", primary_mask);
     try parseSection(&chunk_column, stream, "block_light", primary_mask);
@@ -56,7 +59,7 @@ pub fn parseSection(chunk_column: *ChunkColumn, stream: anytype, comptime sectio
                     .block_type = undefined,
                     .block_meta = undefined,
                     .block_light = undefined,
-                    .sky_light = null,
+                    .sky_light = undefined,
                     .add_array = undefined,
                 };
             }
