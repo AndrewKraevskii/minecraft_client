@@ -1,6 +1,5 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-const log = std.log.scoped(.world);
 
 const World = @This();
 
@@ -84,7 +83,7 @@ pub const Player = struct {
     const Name = std.BoundedArray(u8, max_entity_name_len);
     const Id = enum(i32) { _ };
 
-    const debug_speed = speed / 2.0;
+    const debug_speed = speed * 2;
 
     const eye_height = 1.62;
     const eneaking_eye_height = 1.27;
@@ -123,7 +122,7 @@ pub const Chat = struct {
 
     pub fn send(chat: *Chat, msg: []const u8, from: @FieldType(Message, "origin")) Message.Id {
         const trimmed = msg[0..@min(max_message_len, msg.len)];
-        var bounded_message: @FieldType(Chat.Message, "bytes") =
+        var bounded_message: @FieldType(Message, "bytes") =
             .{};
         bounded_message.appendSliceAssumeCapacity(trimmed);
         if (chat.messages.unusedCapacitySlice().len == 0) {
@@ -214,7 +213,7 @@ pub fn player(world: *const World) Player {
     return @constCast(world).playerPtr().*;
 }
 
-/// Processe one tick of game
+/// Process one tick of game
 pub fn tick(
     world: *World,
     events: []const Event,
@@ -243,9 +242,9 @@ pub fn tick(
     }
 
     // make sure player is always at the top block
-    const top = world.firstNonEmptyBlockAtTheTop(world.player().position[0], world.player().position[2]);
-    world.playerPtr().on_ground = true;
-    world.playerPtr().setHeight(@as(f32, @floatFromInt(top)) + 4.62);
+    // const top = world.firstNonEmptyBlockAtTheTop(world.player().position[0], world.player().position[2]);
+    // world.playerPtr().on_ground = true;
+    // world.playerPtr().setHeight(@as(f32, @floatFromInt(top)) + 4.62);
 }
 
 fn firstNonEmptyBlockAtTheTop(world: *const World, x: f32, z: f32) u8 {

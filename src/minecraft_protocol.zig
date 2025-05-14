@@ -12,8 +12,6 @@ const String = struct {
     }
 };
 
-const ObjectData = extern struct { value: i32 };
-
 const EntityMetadata =
     [1 << 5]union(enum) {
         byte: u8,

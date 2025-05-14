@@ -3,10 +3,7 @@ const std = @import("std");
 const geom = @import("geo_math");
 const sokol = @import("sokol");
 const sg = sokol.gfx;
-const sapp = sokol.app;
 const sglue = sokol.glue;
-const slog = sokol.log;
-const simgui = sokol.imgui;
 
 const shd = @import("cube.glsl.zig");
 const World = @import("World.zig");
