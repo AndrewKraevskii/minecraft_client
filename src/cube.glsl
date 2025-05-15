@@ -12,6 +12,7 @@ layout(binding=0) uniform vs_params {
 // NOTE: 'vertex' is a reserved name in MSL
 struct sb_vertex {
     vec3 pos;
+    vec2 uv;
 };
 
 struct BlockType {
@@ -28,11 +29,13 @@ layout(binding=1) readonly buffer vertices {
 };
 
 out uint typ;
+out vec2 uv;
 
 
 void main() {
     motor motor_ = mat2x4(mot1, mot2);
     vec3 position = vtx[gl_VertexIndex].pos;
+    uv = vtx[gl_VertexIndex].uv;
 
     float x = float(gl_InstanceIndex & 0xf);
     float z = float((gl_InstanceIndex >> 4) & 0xf);
@@ -50,13 +53,19 @@ void main() {
 
 @fs fs
 flat in uint typ;
+in vec2 uv;
 out vec4 frag_color;
+
+float max2(vec2 v) {
+  return max(v.x, v.y);
+}
 
 void main() {
     if (typ == 0) discard;
 
     vec4 color = vec4(fract(float(typ) * 0.23), fract(float(typ) * 0.33), fract(float(typ) * 0.49), 1);
-    frag_color = color;
+    float edginess = step(max2(abs(uv - 0.5)), 0.45);
+    frag_color = mix(color, vec4(vec3(0.0), 1.0), edginess);
 }
 @end
 

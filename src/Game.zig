@@ -172,12 +172,12 @@ fn sokolFrame(user_data: ?*anyopaque) callconv(.c) void {
     state.update();
 
     if (state.world) |*world| {
-        if (world.chunks.count() > World.chunks_in_column * 6 * 6) {
-            clearScreen(&state.graphics);
-            state.renderer.renderWorld(world);
-        } else {
-            drawLoadingScreen(&state.graphics, world);
-        }
+        // if (world.chunks.count() > World.chunks_in_column * 6 * 6) {
+        clearScreen(&state.graphics);
+        state.renderer.renderWorld(world);
+        // } else {
+        //     drawLoadingScreen(&state.graphics, world);
+        // }
     }
 
     { //=== UI CODE STARTS HERE

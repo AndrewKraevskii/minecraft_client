@@ -43,32 +43,35 @@ pub fn init(gpa: std.mem.Allocator) !Renderer {
     const cube_data = sg.makeBuffer(.{
         .type = .STORAGEBUFFER,
         .data = sg.asRange(&[_]shd.SbVertex{
-            // zig fmt: off
-            .{ .pos = .{ 0, 0, 0 } },
-            .{ .pos = .{ 1, 0, 0 } },
-            .{ .pos = .{ 1, 1, 0 } },
-            .{ .pos = .{ 0, 1, 0 } },
-            .{ .pos = .{ 0, 0, 1 } },
-            .{ .pos = .{ 1, 0, 1 } },
-            .{ .pos = .{ 1, 1, 1 } },
-            .{ .pos = .{ 0, 1, 1 } },
-            .{ .pos = .{ 0, 0, 0 } },
-            .{ .pos = .{ 0, 1, 0 } },
-            .{ .pos = .{ 0, 1, 1 } },
-            .{ .pos = .{ 0, 0, 1 } },
-            .{ .pos = .{ 1, 0, 0 } },
-            .{ .pos = .{ 1, 1, 0 } },
-            .{ .pos = .{ 1, 1, 1 } },
-            .{ .pos = .{ 1, 0, 1 } },
-            .{ .pos = .{ 0, 0, 0 } },
-            .{ .pos = .{ 0, 0, 1 } },
-            .{ .pos = .{ 1, 0, 1 } },
-            .{ .pos = .{ 1, 0, 0 } },
-            .{ .pos = .{ 0, 1, 0 } },
-            .{ .pos = .{ 0, 1, 1 } },
-            .{ .pos = .{ 1, 1, 1 } },
-            .{ .pos = .{ 1, 1, 0 } },
-            // zig fmt: on
+            .{ .pos = .{ 0, 0, 0 }, .uv = .{ 0, 0 } },
+            .{ .pos = .{ 1, 0, 0 }, .uv = .{ 1, 0 } },
+            .{ .pos = .{ 1, 1, 0 }, .uv = .{ 1, 1 } },
+            .{ .pos = .{ 0, 1, 0 }, .uv = .{ 0, 1 } },
+
+            .{ .pos = .{ 0, 0, 1 }, .uv = .{ 0, 0 } },
+            .{ .pos = .{ 1, 0, 1 }, .uv = .{ 1, 0 } },
+            .{ .pos = .{ 1, 1, 1 }, .uv = .{ 1, 1 } },
+            .{ .pos = .{ 0, 1, 1 }, .uv = .{ 0, 1 } },
+
+            .{ .pos = .{ 0, 0, 0 }, .uv = .{ 0, 0 } },
+            .{ .pos = .{ 0, 1, 0 }, .uv = .{ 1, 0 } },
+            .{ .pos = .{ 0, 1, 1 }, .uv = .{ 1, 1 } },
+            .{ .pos = .{ 0, 0, 1 }, .uv = .{ 0, 1 } },
+
+            .{ .pos = .{ 1, 0, 0 }, .uv = .{ 0, 0 } },
+            .{ .pos = .{ 1, 1, 0 }, .uv = .{ 1, 0 } },
+            .{ .pos = .{ 1, 1, 1 }, .uv = .{ 1, 1 } },
+            .{ .pos = .{ 1, 0, 1 }, .uv = .{ 0, 1 } },
+
+            .{ .pos = .{ 0, 0, 0 }, .uv = .{ 0, 0 } },
+            .{ .pos = .{ 0, 0, 1 }, .uv = .{ 1, 0 } },
+            .{ .pos = .{ 1, 0, 1 }, .uv = .{ 1, 1 } },
+            .{ .pos = .{ 1, 0, 0 }, .uv = .{ 0, 1 } },
+
+            .{ .pos = .{ 0, 1, 0 }, .uv = .{ 0, 0 } },
+            .{ .pos = .{ 0, 1, 1 }, .uv = .{ 1, 0 } },
+            .{ .pos = .{ 1, 1, 1 }, .uv = .{ 1, 1 } },
+            .{ .pos = .{ 1, 1, 0 }, .uv = .{ 0, 1 } },
         }),
         .label = "vertices",
     });
@@ -78,7 +81,7 @@ pub fn init(gpa: std.mem.Allocator) !Renderer {
     bind.index_buffer = index_buffer;
     bind.storage_buffers[shd.SBUF_vertices] = cube_data;
 
-    var chunks: Chunks = .empty; 
+    var chunks: Chunks = .empty;
     try chunks.ensureTotalCapacity(gpa, World.max_chunks);
 
     return .{
@@ -118,7 +121,6 @@ pub fn renderWorld(renderer: *Renderer, world: *const World) void {
     const height: f32 = sokol.app.heightf();
     const aspect_ratio = width / height;
 
-    
     var action: sg.PassAction = .{};
     action.colors[0] = .{
         .load_action = .CLEAR,
@@ -129,7 +131,6 @@ pub fn renderWorld(renderer: *Renderer, world: *const World) void {
 
     const player = world.player();
 
-
     const my_pos = geom.Point{
         .e023 = player.position[0],
         .e013 = -player.position[1],
@@ -138,7 +139,6 @@ pub fn renderWorld(renderer: *Renderer, world: *const World) void {
     };
 
     const rotation_around_origin = toRotor(player.yaw, player.pitch);
-
 
     sg.beginPass(.{
         .action = action,
