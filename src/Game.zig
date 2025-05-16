@@ -32,7 +32,7 @@ config: Config,
 
 world_mutex: Mutex,
 world: ?World,
-/// would be null i
+
 network_thread: ?std.Thread,
 
 graphics: Graphics,
