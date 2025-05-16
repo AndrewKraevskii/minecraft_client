@@ -1,6 +1,7 @@
 const std = @import("std");
 const Mutex = std.Thread.Mutex;
 const World = @import("World.zig");
+const Event = @import("Game.zig").Event;
 const Timer = @import("Timer.zig");
 const protocol = @import("minecraft_protocol.zig");
 const ChunkColumn = @import("ChunkColumn.zig");
@@ -12,7 +13,7 @@ pub fn networkThread(
     password: []const u8,
     mutex: *Mutex,
     world: *World,
-    events: *std.ArrayListUnmanaged(World.Event),
+    events: *std.ArrayListUnmanaged(Event),
 ) void {
     errdefer |e| {
         std.log.err("Networking thread failed with {s}", .{@errorName(e)});
@@ -73,9 +74,9 @@ pub fn networkThread(
                         , .{
                             .yaw = player.yaw,
                             .pitch = player.pitch,
-                            .x = player.position[0],
-                            .y = player.position[1],
-                            .z = player.position[2],
+                            .x = player.position.x,
+                            .y = player.position.y,
+                            .z = player.position.z,
                             .stance = player.stance,
                             .on_ground = player.on_ground,
                         });
@@ -83,9 +84,9 @@ pub fn networkThread(
                             .@"Player Position and Look" = .{
                                 .yaw = player.yaw,
                                 .pitch = player.pitch,
-                                .x = player.position[0],
-                                .y = player.position[1],
-                                .z = player.position[2],
+                                .x = player.position.x,
+                                .y = player.position.y,
+                                .z = player.position.z,
                                 .stance = player.stance,
                                 .on_ground = player.on_ground,
                             },
@@ -207,7 +208,11 @@ pub fn networkThread(
                     .id = player.id,
                     .name = player.name,
                     .pitch = pl.pitch,
-                    .position = .{ @floatCast(pl.x), @floatCast(pl.y), @floatCast(pl.z) },
+                    .position = .{
+                        .x = pl.x,
+                        .y = pl.y,
+                        .z = pl.z,
+                    },
                     .stance = @floatCast(pl.stance),
                     .velocity = player.velocity,
                     .yaw = pl.yaw,
@@ -263,7 +268,7 @@ pub fn worldHandshake(
     std.debug.print("{}", .{login_request});
 
     // Spawn Position (0x06)
-    const spawn_position: [3]f32 = blk: {
+    const spawn_position: @import("vectors.zig").EntityPosition = blk: {
         const spawn_pos = try protocol.readExpectedPacket(
             stream.reader(),
             connect_arena.allocator(),
@@ -271,9 +276,9 @@ pub fn worldHandshake(
         );
 
         break :blk .{
-            @floatFromInt(spawn_pos.x),
-            @floatFromInt(spawn_pos.y),
-            @floatFromInt(spawn_pos.z),
+            .x = @floatFromInt(spawn_pos.x),
+            .y = @floatFromInt(spawn_pos.y),
+            .z = @floatFromInt(spawn_pos.z),
         };
     };
 

@@ -132,9 +132,9 @@ pub fn renderWorld(renderer: *Renderer, world: *const World) void {
     const player = world.player();
 
     const my_pos = geom.Point{
-        .e023 = player.position[0],
-        .e013 = -player.position[1],
-        .e012 = player.position[2],
+        .e023 = @floatCast(player.position.x),
+        .e013 = @floatCast(-player.position.y),
+        .e012 = @floatCast(player.position.z),
         .e123 = 1,
     };
 

@@ -52,7 +52,7 @@ const Graphics = struct {
     sokol_2d: Sokol2d,
 };
 
-const Events = std.ArrayListUnmanaged(World.Event);
+const Events = std.ArrayListUnmanaged(Event);
 
 fn sokolInit(user_data: ?*anyopaque) callconv(.c) void {
     const state: *@This() = @ptrCast(@alignCast(user_data));
@@ -138,7 +138,7 @@ const UiImgui = struct {
 
 fn update(state: *@This()) void {
     if (state.world) |*world| {
-        world.tick(state.events.items, 1.0 / 60.0);
+        tick(world, state.events.items, 1.0 / 60.0);
         state.events.clearRetainingCapacity();
     }
 }
@@ -436,4 +436,57 @@ pub fn main() !void {
 fn fail(comptime fmt: []const u8, args: anytype) noreturn {
     std.log.err(fmt, args);
     std.process.exit(1);
+}
+
+pub const Event = union(enum) {
+    player_move: [3]f32,
+    player_look_absolute: struct { yaw: f32, pitch: f32 },
+    player_look_relative: struct { yaw: f32, pitch: f32 },
+    update_health: struct {
+        /// <= 0 -> dead, == 20 -> full HP
+        health: f32,
+        /// 0 - 20
+        food: i16,
+        food_starvation: f32,
+    },
+    spawn_player: struct {
+        id: World.Player.Id,
+        name: World.Player.Name,
+        position: [3]f32,
+    },
+};
+
+///
+/// Process one tick of game
+pub fn tick(
+    world: *World,
+    events: []const Event,
+    delta_t: f32,
+) void {
+    const yaw = world.player().yaw;
+    for (events) |event| {
+        switch (event) {
+            else => {
+                std.log.err("got event {s}", .{@tagName(event)});
+            },
+            .player_move => |m| {
+                world.playerPtr().position.x += @cos(-yaw) * m[0] * delta_t * World.Player.debug_speed + @sin(yaw) * m[2] * delta_t * World.Player.debug_speed;
+                world.playerPtr().position.y += m[1] * delta_t * World.Player.debug_speed;
+                world.playerPtr().position.z += @sin(-yaw) * m[0] * delta_t * World.Player.debug_speed + @cos(yaw) * m[2] * delta_t * World.Player.debug_speed;
+            },
+            .player_look_absolute => |l| {
+                world.playerPtr().pitch = l.pitch;
+                world.playerPtr().yaw = l.yaw;
+            },
+            .player_look_relative => |l| {
+                world.playerPtr().pitch += l.pitch;
+                world.playerPtr().yaw += l.yaw;
+            },
+        }
+    }
+
+    // make sure player is always at the top block
+    // const top = world.firstNonEmptyBlockAtTheTop(world.player().position[0], world.player().position[2]);
+    // world.playerPtr().on_ground = true;
+    // world.playerPtr().setHeight(@as(f32, @floatFromInt(top)) + 4.62);
 }
