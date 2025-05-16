@@ -30,6 +30,9 @@ const config_path = "config.zon";
 gpa: std.heap.GeneralPurposeAllocator(.{}),
 config: Config,
 
+/// used to close networking thread
+running: std.atomic.Value(bool),
+
 world_mutex: Mutex,
 world: ?World,
 
@@ -75,8 +78,9 @@ fn sokolInit(user_data: ?*anyopaque) callconv(.c) void {
 
     state.* = .{
         .config = config,
+        .running = .init(true),
         .input = .init,
-        .network_thread = undefined,
+        .network_thread = null,
         .graphics = .{
             .sokol_2d = sokol2d,
             .clear_action = .{},
@@ -223,6 +227,7 @@ fn sokolFrame(user_data: ?*anyopaque) callconv(.c) void {
 
                 state.network_thread = std.Thread.spawn(.{}, networking.networkThread, .{
                     state.gpa.allocator(),
+                    &state.running,
                     stream,
                     state.config.password orelse "",
                     &state.world_mutex,
@@ -375,6 +380,10 @@ fn sokolEvent(ev: [*c]const sapp.Event, user_data: ?*anyopaque) callconv(.c) voi
     defer state.world_mutex.unlock();
 
     switch (event.type) {
+        .QUIT_REQUESTED => {
+            state.running.store(false, .release);
+            sapp.quit();
+        },
         .KEY_DOWN => switch (event.key_code) {
             .ESCAPE => {
                 sapp.requestQuit();

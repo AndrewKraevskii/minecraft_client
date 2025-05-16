@@ -7,6 +7,7 @@ const ChunkColumn = @import("ChunkColumn.zig");
 
 pub fn networkThread(
     gpa: std.mem.Allocator,
+    running: *std.atomic.Value(bool),
     stream: std.net.Stream,
     password: []const u8,
     mutex: *Mutex,
@@ -33,7 +34,7 @@ pub fn networkThread(
 
     var last_message_id: World.Chat.Message.Id = .none;
 
-    while (true) {
+    while (running.load(.acquire)) {
         {
             mutex.lock();
             defer mutex.unlock();
