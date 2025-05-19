@@ -1,4 +1,5 @@
 zig-out/
 .zig-cache/
-*.glsl.zig
 config.zon
+
+*.glsl.zig

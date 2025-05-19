@@ -3,7 +3,7 @@ const std = @import("std");
 const sokol = @import("sokol");
 
 const shaders: []const []const u8 = &.{
-    "src/cube.glsl",
+    "src/shaders/cube.glsl",
 };
 
 pub fn build(b: *std.Build) !void {
