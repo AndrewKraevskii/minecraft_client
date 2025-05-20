@@ -1,7 +1,6 @@
 const std = @import("std");
 const Mutex = std.Thread.Mutex;
 const World = @import("World.zig");
-const Event = @import("Game.zig").Event;
 const Timer = @import("Timer.zig");
 const protocol = @import("minecraft_protocol.zig");
 const ChunkColumn = @import("ChunkColumn.zig");
@@ -13,7 +12,6 @@ pub fn networkThread(
     password: []const u8,
     mutex: *Mutex,
     world: *World,
-    events: *std.ArrayListUnmanaged(Event),
 ) void {
     errdefer |e| {
         std.log.err("Networking thread failed with {s}", .{@errorName(e)});
@@ -114,15 +112,14 @@ pub fn networkThread(
             .@"Spawn Named Entity" => |sp| {
                 mutex.lock();
                 defer mutex.unlock();
-                try events.append(gpa, .{
-                    .spawn_player = .{
-                        .id = @enumFromInt(sp.entity_id),
-                        .name = try .fromSlice(sp.player_name.utf8),
-                        .position = .{
-                            @floatFromInt(sp.x),
-                            @floatFromInt(sp.y),
-                            @floatFromInt(sp.z),
-                        },
+
+                try world.spawnPlayer(.{
+                    .id = @enumFromInt(sp.entity_id),
+                    .name = try .fromSlice(sp.player_name.utf8),
+                    .position = .{
+                        @floatFromInt(sp.x),
+                        @floatFromInt(sp.y),
+                        @floatFromInt(sp.z),
                     },
                 });
             },

@@ -46,7 +46,7 @@ pub const Player = struct {
     name: Name,
     position: EntityPos,
     stance: f32 = 1.74,
-    velocity: EntityPos = .zero,
+    velocity: [3]f32 = @splat(0),
     yaw: f32 = 0,
     pitch: f32 = 0,
     on_ground: bool,
@@ -192,6 +192,16 @@ pub fn loadChunk(world: *World, position: Chunk.Pos, chunk: Chunk) void {
 
 pub fn unloadChunk(world: *World, position: Chunk.Pos) void {
     world.chunks.swapRemove(position);
+}
+
+pub fn spawnPlayer(world: *World, stuff: struct {
+    id: World.Player.Id,
+    name: World.Player.Name,
+    position: [3]f32,
+}) !void {
+    _ = world;
+    _ = stuff;
+    unreachable;
 }
 
 pub fn deinit(world: *World, gpa: Allocator) void {

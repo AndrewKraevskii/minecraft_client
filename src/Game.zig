@@ -42,7 +42,6 @@ graphics: Graphics,
 renderer: Renderer,
 
 ui_imgui: UiImgui,
-events: Events,
 
 input: Input,
 
@@ -51,8 +50,6 @@ const Graphics = struct {
     load_action: sg.PassAction,
     sokol_2d: Sokol2d,
 };
-
-const Events = std.ArrayListUnmanaged(Event);
 
 fn sokolInit(user_data: ?*anyopaque) callconv(.c) void {
     const state: *@This() = @ptrCast(@alignCast(user_data));
@@ -91,7 +88,6 @@ fn sokolInit(user_data: ?*anyopaque) callconv(.c) void {
         .ui_imgui = .init(config.username, config.server_ip, config.server_port, config.password),
         .world_mutex = .{},
         .world = null,
-        .events = .empty,
     };
     state.graphics.clear_action.colors[0] = .{
         .load_action = .CLEAR,
@@ -136,11 +132,37 @@ const UiImgui = struct {
     }
 };
 
-fn update(state: *@This()) void {
-    if (state.world) |*world| {
-        tick(world, state.events.items, 1.0 / 60.0);
-        state.events.clearRetainingCapacity();
+fn updateClientInput(
+    world: *World,
+    input: Input,
+    delta_t: f32,
+) void {
+    const yaw = world.player().yaw;
+
+    // move
+    var velocity: [3]f32 = @splat(0);
+    inline for ([_]Input.Keycode{ .W, .A, .S, .D, .LEFT_SHIFT, .LEFT_CONTROL }) |key| {
+        if (input.isKeyDown(key)) {
+            switch (key) {
+                .W => velocity[2] += 1,
+                .S => velocity[2] -= 1,
+                .A => velocity[0] += 1,
+                .D => velocity[0] -= 1,
+                .LEFT_SHIFT => velocity[1] += 1,
+                .LEFT_CONTROL => velocity[1] -= 1,
+                else => comptime unreachable,
+            }
+        }
     }
+
+    world.playerPtr().position.x += @cos(-yaw) * velocity[0] * delta_t * World.Player.debug_speed + @sin(yaw) * velocity[2] * delta_t * World.Player.debug_speed;
+    world.playerPtr().position.y += velocity[1] * delta_t * World.Player.debug_speed;
+    world.playerPtr().position.z += @sin(-yaw) * velocity[0] * delta_t * World.Player.debug_speed + @cos(yaw) * velocity[2] * delta_t * World.Player.debug_speed;
+
+    // rotate
+    world.playerPtr().yaw -= input.mouse_delta[0] / 100;
+    world.playerPtr().pitch += input.mouse_delta[1] / 100;
+    world.playerPtr().pitch = std.math.clamp(world.playerPtr().pitch, -std.math.pi / 2.0, std.math.pi / 2.0);
 }
 
 fn sokolFrame(user_data: ?*anyopaque) callconv(.c) void {
@@ -150,38 +172,11 @@ fn sokolFrame(user_data: ?*anyopaque) callconv(.c) void {
     state.world_mutex.lock();
     defer state.world_mutex.unlock();
 
-    state.events.append(state.gpa.allocator(), .{
-        .player_look_relative = .{
-            .yaw = state.input.mouse_delta[0] / 100,
-            .pitch = state.input.mouse_delta[1] / 100,
-        },
-    }) catch @panic("OOM");
-
-    inline for ([_]Input.Keycode{ .W, .A, .S, .D, .LEFT_SHIFT, .LEFT_CONTROL }) |key| {
-        if (state.input.isKeyDown(key)) {
-            state.events.append(state.gpa.allocator(), .{
-                .player_move = switch (key) {
-                    .W => .{ 0, 0, 1 },
-                    .A => .{ 1, 0, 0 },
-                    .S => .{ 0, 0, -1 },
-                    .D => .{ -1, 0, 0 },
-                    .LEFT_SHIFT => .{ 0, 1, 0 },
-                    .LEFT_CONTROL => .{ 0, -1, 0 },
-                    else => comptime unreachable,
-                },
-            }) catch @panic("OOM");
-        }
-    }
-
-    state.update();
-
     if (state.world) |*world| {
-        // if (world.chunks.count() > World.chunks_in_column * 6 * 6) {
+        updateClientInput(world, state.input, 1.0 / 60.0);
+
         clearScreen(&state.graphics);
         state.renderer.renderWorld(world);
-        // } else {
-        //     drawLoadingScreen(&state.graphics, world);
-        // }
     }
 
     { //=== UI CODE STARTS HERE
@@ -232,7 +227,6 @@ fn sokolFrame(user_data: ?*anyopaque) callconv(.c) void {
                     state.config.password orelse "",
                     &state.world_mutex,
                     &state.world.?,
-                    &state.events,
                 }) catch @panic("can't spawn thread");
             }
         }
@@ -436,57 +430,4 @@ pub fn main() !void {
 fn fail(comptime fmt: []const u8, args: anytype) noreturn {
     std.log.err(fmt, args);
     std.process.exit(1);
-}
-
-pub const Event = union(enum) {
-    player_move: [3]f32,
-    player_look_absolute: struct { yaw: f32, pitch: f32 },
-    player_look_relative: struct { yaw: f32, pitch: f32 },
-    update_health: struct {
-        /// <= 0 -> dead, == 20 -> full HP
-        health: f32,
-        /// 0 - 20
-        food: i16,
-        food_starvation: f32,
-    },
-    spawn_player: struct {
-        id: World.Player.Id,
-        name: World.Player.Name,
-        position: [3]f32,
-    },
-};
-
-///
-/// Process one tick of game
-pub fn tick(
-    world: *World,
-    events: []const Event,
-    delta_t: f32,
-) void {
-    const yaw = world.player().yaw;
-    for (events) |event| {
-        switch (event) {
-            else => {
-                std.log.err("got event {s}", .{@tagName(event)});
-            },
-            .player_move => |m| {
-                world.playerPtr().position.x += @cos(-yaw) * m[0] * delta_t * World.Player.debug_speed + @sin(yaw) * m[2] * delta_t * World.Player.debug_speed;
-                world.playerPtr().position.y += m[1] * delta_t * World.Player.debug_speed;
-                world.playerPtr().position.z += @sin(-yaw) * m[0] * delta_t * World.Player.debug_speed + @cos(yaw) * m[2] * delta_t * World.Player.debug_speed;
-            },
-            .player_look_absolute => |l| {
-                world.playerPtr().pitch = l.pitch;
-                world.playerPtr().yaw = l.yaw;
-            },
-            .player_look_relative => |l| {
-                world.playerPtr().pitch += l.pitch;
-                world.playerPtr().yaw += l.yaw;
-            },
-        }
-    }
-
-    // make sure player is always at the top block
-    // const top = world.firstNonEmptyBlockAtTheTop(world.player().position[0], world.player().position[2]);
-    // world.playerPtr().on_ground = true;
-    // world.playerPtr().setHeight(@as(f32, @floatFromInt(top)) + 4.62);
 }
